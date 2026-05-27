@@ -1,2 +1,2 @@
 # Fire/Smoke Detector
-Repository for my personal project for university/college
+Repository of my personal project for university/college
