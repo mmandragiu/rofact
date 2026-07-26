@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from datetime import date
 from enum import Enum
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -332,8 +331,19 @@ class SnapshotManifest(BaseModel):
 
 __all__ = [
     "SCHEMA_VERSION",
-    "Label", "Topic", "SourceTier", "TextualRelation", "EvidenceQuality",
-    "CreationMethod", "PerturbationType", "NegativeType", "Split",
-    "Document", "Passage", "Claim", "ClaimPassagePair",
-    "SnapshotEntry", "SnapshotManifest",
+    "Claim",
+    "ClaimPassagePair",
+    "CreationMethod",
+    "Document",
+    "EvidenceQuality",
+    "Label",
+    "NegativeType",
+    "Passage",
+    "PerturbationType",
+    "SnapshotEntry",
+    "SnapshotManifest",
+    "SourceTier",
+    "Split",
+    "TextualRelation",
+    "Topic",
 ]

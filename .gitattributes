@@ -1,0 +1,11 @@
+# Normalize line endings: store text files with LF in the repo, regardless of OS.
+# Silences the "LF will be replaced by CRLF" warnings on Windows and keeps diffs
+# clean when the project also runs on Linux (Colab, CI) later.
+* text=auto eol=lf
+
+# Binary files git must never touch.
+*.faiss binary
+*.bin binary
+*.safetensors binary
+*.pt binary
+*.ckpt binary

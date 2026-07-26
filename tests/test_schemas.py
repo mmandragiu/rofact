@@ -18,10 +18,20 @@ from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from rofact.io import normalize_text, sha256_text, stable_id  # noqa: E402
-from rofact.schemas import (  # noqa: E402
-    Claim, ClaimPassagePair, CreationMethod, Document, EvidenceQuality, Label,
-    Passage, PerturbationType, SourceTier, Split, TextualRelation, Topic,
+from rofact.io import normalize_text, sha256_text, stable_id
+from rofact.schemas import (
+    Claim,
+    ClaimPassagePair,
+    CreationMethod,
+    Document,
+    EvidenceQuality,
+    Label,
+    Passage,
+    PerturbationType,
+    SourceTier,
+    Split,
+    TextualRelation,
+    Topic,
 )
 
 HASH = "a" * 64

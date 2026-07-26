@@ -21,10 +21,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from rofact import io  # noqa: E402
-from rofact.schemas import (  # noqa: E402
-    Claim, ClaimPassagePair, Document, EvidenceQuality, Label, Passage,
-    PerturbationType, Split, TextualRelation,
+from rofact import io
+from rofact.schemas import (
+    Claim,
+    ClaimPassagePair,
+    Document,
+    EvidenceQuality,
+    Label,
+    Passage,
+    PerturbationType,
+    Split,
+    TextualRelation,
 )
 
 Severity = str  # "error" | "warning"

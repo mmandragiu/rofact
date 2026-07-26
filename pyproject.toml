@@ -1,0 +1,33 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Enable E402 so the intentional `# noqa: E402` in the CLI scripts becomes
+# meaningful: those scripts do `sys.path.insert(...)` before importing `rofact`,
+# which is a deliberate module-level import ordering, not a mistake.
+extend-select = ["I", "E402"]
+
+# Rules silenced on purpose, with the reason. These are cosmetic or premature
+# for the current scaffold phase — not defects.
+ignore = [
+    "C408",    # dict(a=1) instead of {"a": 1}: the scaffold uses dict(...) for readable config literals
+    "DTZ011",  # date.today() without timezone: snapshot dates are calendar dates, tz is irrelevant
+    "UP035",   # deprecated typing import: cosmetic modernization, defer to the S12 cleanup pass
+    "UP037",   # quotes around a type annotation: cosmetic
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Ingest modules are scaffolds: they import schema types (Document, SourceTier…)
+# that are used only once the TODO bodies are implemented (S2–S3). Until then
+# F401 "imported but unused" is expected. Remove this line when the modules are done.
+"src/rofact/ingest/*" = ["F401"]
+# validate_data.py imports Split and PerturbationType for the not-yet-written
+# checks C5 (family split leakage) and C8 (perturbation diversity). Remove once
+# those checks are implemented.
+"scripts/validate_data.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+# Treat `rofact` as our own package so its imports are grouped separately from
+# third-party ones — keeps the import blocks readable and stable.
+known-first-party = ["rofact"]

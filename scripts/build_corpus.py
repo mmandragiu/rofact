@@ -17,8 +17,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from rofact import io  # noqa: E402
-from rofact.ingest import base  # noqa: E402
+from rofact import io
+from rofact.ingest import base
 
 SOURCES = ["eurostat", "ins_tempo", "datagov", "legislatie", "pdf_docs", "media"]
 
