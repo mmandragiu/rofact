@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalează dependențele de bază
+        # Doar nucleul — torch/transformers ar face CI-ul inutil de lent.
+        run: pip install pydantic PyYAML pytest ruff
+
+      - name: Lint
+        run: ruff check src scripts tests
+
+      - name: Teste de schemă
+        run: pytest tests/ -q
+
+      - name: Validează datasetul
+        # Nu eșuează cât timp adnotările sunt goale; devine util din S5.
+        run: python scripts/validate_data.py

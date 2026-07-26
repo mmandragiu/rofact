@@ -1,0 +1,44 @@
+# --- date brute și snapshot-uri (NU se comit; manifestele DA) ---
+data/raw/
+data/snapshots/*
+!data/snapshots/manifests/
+data/processed/*.jsonl
+!data/processed/.gitkeep
+
+# datele adnotate SE COMIT — sunt produsul proiectului
+!data/annotations/*.jsonl
+
+# --- modele și indexuri ---
+models/
+*.faiss
+*.bin
+*.safetensors
+*.pt
+*.ckpt
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# --- secrete ---
+.env
+.env.*
+!.env.example
+
+# --- SO / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- output-uri temporare ---
+outputs/
+wandb/
+*.log

@@ -1,0 +1,198 @@
+# Registrul de surse RoFact
+#
+# Fiecare intrare descrie O sursă. Câmpul `license` ajunge direct în
+# Document.license, iar validatorul (C10) refuză "unknown" pentru G1/G2.
+#
+# STATUS: `verified` înseamnă că TU ai citit termenii de utilizare și ai notat
+# data. Nu marca nimic verified pe încredere — e singurul lucru din proiect care
+# poate crea o problemă reală dacă publici datasetul.
+
+schema_version: "1.0.0"
+
+sources:
+
+  # ======================================================================
+  # G1 — date primare structurate
+  # ======================================================================
+
+  eurostat:
+    tier: G1
+    name: "Eurostat — baza de date de diseminare"
+    homepage: "https://ec.europa.eu/eurostat/data/database"
+    access: api
+    api_base: "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data"
+    format: json-stat2
+    # Exemplu confirmat funcțional:
+    #   {api_base}/une_rt_a?format=JSON&geo=RO&lang=RO&sex=T&unit=PC_ACT
+    license: "Eurostat reuse policy (atribuire obligatorie)"
+    license_url: "https://ec.europa.eu/eurostat/about-us/policies/copyright"
+    license_status: to_verify        # TODO: citește și pune data verificării
+    robots_checked: false            # TODO
+    topics: [economie, demografie, statistici_ro_ue]
+    notes: >
+      Baza curentă NU versionează valorile istorice — o re-descărcare poate da
+      alte cifre pentru același an. De aceea toate experimentele rulează pe
+      snapshot-uri fixe cu hash. Vezi docs/source_registry.md.
+    datasets:                        # TODO: extinde lista pe măsură ce lucrezi
+      - code: une_rt_a
+        label: "Rata șomajului, date anuale"
+        topic: economie
+      - code: prc_hicp_aind
+        label: "HICP — rata anuală a inflației"
+        topic: economie
+      - code: demo_gind
+        label: "Indicatori demografici principali"
+        topic: demografie
+      - code: nama_10_gdp
+        label: "PIB și componente principale"
+        topic: economie
+      - code: ilc_li02
+        label: "Rata riscului de sărăcie"
+        topic: statistici_ro_ue
+
+  ins_tempo:
+    tier: G1
+    name: "INS — TEMPO Online"
+    homepage: "https://statistici.insse.ro/tempoins/"
+    access: api
+    api_base: "http://statistici.insse.ro:8077/tempo-ins"
+    format: json
+    endpoints:
+      tree: "{api_base}/context/{code}"           # arborele tematic
+      matrix_meta: "{api_base}/matrix/{matrix}"   # dimensiuni + definiție + metodologie
+      matrix_data: "{api_base}/matrix/dataSet/{matrix}"   # POST — VERIFICĂ payload-ul în DevTools
+    license: "date publice INS"
+    license_url: "https://insse.ro/cms/ro/content/termeni-si-conditii"
+    license_status: to_verify        # TODO
+    robots_checked: false            # TODO
+    topics: [economie, demografie]
+    notes: >
+      API nedocumentat public dar stabil. Răspunsul /matrix/{cod} conține
+      `definitie`, `metodologie`, `observatii` și `ultimaActualizare` — text
+      narativ oficial, foarte bun ca pasaje G1 pentru claims despre definiții.
+      Rate limit necunoscut: pune delay de 1-2s între cereri.
+    matrices:                        # TODO: extinde
+      - code: POP105A
+        label: "Populația rezidentă la 1 ianuarie pe grupe de vârstă, sexe, medii"
+        topic: demografie
+      - code: POP107D
+        label: "Populația după domiciliu la 1 ianuarie"
+        topic: demografie
+        note: "Perechea POP105A/POP107D e o sursă excelentă de claims dificile."
+
+  data_gov_ro:
+    tier: G1
+    name: "data.gov.ro — portalul de date deschise"
+    homepage: "https://data.gov.ro/"
+    access: api
+    api_base: "https://data.gov.ro/api/3/action"
+    format: ckan
+    endpoints:
+      search: "{api_base}/package_search?q={query}&rows={rows}"
+      show: "{api_base}/package_show?id={id}"
+    license: "per dataset — vezi câmpul license_id din CKAN"
+    license_status: per_resource
+    robots_checked: false            # TODO
+    topics: [administratie_publica]
+    notes: >
+      Licența diferă de la dataset la dataset. Copiaz-o în Document.license
+      din `license_id`/`license_title`, nu pune o valoare globală.
+      TODO: verifică accesul — la testarea inițială API-ul a răspuns gol.
+
+  # ======================================================================
+  # G2 — documente oficiale
+  # ======================================================================
+
+  bnr:
+    tier: G2
+    name: "Banca Națională a României — rapoarte"
+    homepage: "https://www.bnr.ro/Publicatii-periodice-204.aspx"
+    access: download
+    format: pdf
+    license: "date publice BNR"
+    license_status: to_verify        # TODO
+    topics: [economie]
+    notes: "Rapoarte asupra inflației, rapoarte anuale. Text narativ, complementar cifrelor."
+
+  min_finante:
+    tier: G2
+    name: "Ministerul Finanțelor — buget și execuție bugetară"
+    homepage: "https://mfinante.gov.ro/"
+    access: download
+    format: pdf
+    license: "date publice"
+    license_status: to_verify        # TODO
+    topics: [administratie_publica, economie]
+
+  legislatie_just:
+    tier: G2
+    name: "Portalul Legislativ — legislatie.just.ro"
+    homepage: "https://legislatie.just.ro/"
+    access: scraping
+    format: html
+    license: "acte normative — text oficial, domeniu public"
+    license_status: to_verify        # TODO
+    robots_checked: false            # TODO — OBLIGATORIU înainte de orice request
+    topics: [legislatie]
+    crawl_policy:
+      delay_seconds: 3
+      max_documents: 30              # NU indexa corpusul legislativ. 20-30 de acte, atât.
+      user_agent: "RoFact-research/0.1 (proiect studențesc; contact: <email>)"
+    notes: >
+      Segmentare pe ARTICOL, nu pe fereastră de cuvinte — articolul e unitatea
+      naturală de citare. Restrânge claims-urile la fapte literale: existența
+      unui articol, o dată de intrare în vigoare, un prag numeric, o abrogare.
+      Interpretarea juridică e în afara scopului v1.
+
+  # ======================================================================
+  # G3 — fact-check documentat (DOAR pentru descoperire)
+  # ======================================================================
+
+  factual_ro:
+    tier: G3
+    name: "Factual.ro"
+    homepage: "https://www.factual.ro/"
+    access: scraping
+    format: html
+    license: "TODO — verifică termenii înainte de a stoca text integral"
+    license_status: to_verify        # TODO
+    robots_checked: false            # TODO
+    topics: [economie, administratie_publica, legislatie]
+    usage: discovery_only
+    notes: >
+      REGULA ABSOLUTĂ: verdictul lor NU se copiază niciodată ca etichetă.
+      Iei (a) afirmația publică și (b) lista surselor primare citate, apoi te
+      întorci la sursa primară și produci propria etichetă.
+      Stochează de preferință doar URL + afirmația extrasă, nu articolul integral.
+
+  afp_factcheck_ro:
+    tier: G3
+    name: "AFP Fact Check România"
+    homepage: "https://factcheck.afp.com/AFP-Romania"
+    access: scraping
+    format: html
+    license: "TODO — conținut AFP, drepturi rezervate; probabil doar link + citat scurt"
+    license_status: to_verify        # TODO
+    usage: discovery_only
+
+  # ======================================================================
+  # MEDIA — corpusul de distractori
+  # ======================================================================
+  #
+  # TODO (S4): completează 12-15 publicații diverse. Criterii de selecție:
+  #   - diversitate de tip: agenție / cotidian / economic / regional / online-only
+  #   - diversitate editorială (nu toate din aceeași familie de proprietate)
+  #   - arhivă accesibilă pe perioada de interes
+  #   - robots.txt permisiv pentru crawl-ul pe care îl faci
+  #
+  # Pentru fiecare: nume, homepage, robots_checked, delay, tip, topics.
+  # NU stoca articole integrale dacă termenii nu permit; pasajele scurte folosite
+  # ca dovadă intră de regulă la citare, dar verifică și documentează în data card.
+
+  media:
+    tier: MEDIA
+    outlets: []                      # TODO: completează în S4
+    default_crawl_policy:
+      delay_seconds: 2
+      user_agent: "RoFact-research/0.1 (proiect studențesc; contact: <email>)"
+      respect_robots: true

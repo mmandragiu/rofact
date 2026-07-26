@@ -1,0 +1,37 @@
+# ---- nucleu (necesar din S1) ----
+pydantic>=2.6
+PyYAML>=6.0
+pandas>=2.2
+requests>=2.31
+tqdm>=4.66
+python-dotenv>=1.0
+
+# ---- ingest (S2-S4) ----
+beautifulsoup4>=4.12
+lxml>=5.1
+trafilatura>=1.8          # extragere text din pagini media
+pdfplumber>=0.11          # PDF-uri G2 (BNR, MF, rapoarte instituționale)
+datasketch>=1.6           # MinHash / LSH pentru deduplicare
+
+# ---- retrieval + verificare (S6-S9) ----
+rank-bm25>=0.2.2
+scikit-learn>=1.4
+sentence-transformers>=3.0
+transformers>=4.40
+torch>=2.2
+datasets>=2.19
+accelerate>=0.30
+faiss-cpu>=1.8
+
+# ---- evaluare / raportare ----
+matplotlib>=3.8
+seaborn>=0.13
+
+# ---- adnotare + demo (S4, S11) ----
+streamlit>=1.35
+fastapi>=0.110
+uvicorn>=0.29
+
+# ---- dev ----
+ruff>=0.4
+pytest>=8.0
