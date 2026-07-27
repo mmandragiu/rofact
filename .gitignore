@@ -8,6 +8,10 @@ data/processed/*.jsonl
 # datele adnotate SE COMIT — sunt produsul proiectului
 !data/annotations/*.jsonl
 
+# --- note de lucru locale (nu se publică) ---
+# Fișier de continuitate între sesiunile de lucru; rămâne doar local.
+docs/stare_proiect.md
+
 # --- modele și indexuri ---
 models/
 *.faiss

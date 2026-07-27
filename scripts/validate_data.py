@@ -65,9 +65,7 @@ class Dataset:
         )
 
 
-# ==========================================================================
-# C1 — unicitatea identificatorilor                                [IMPLEMENTAT]
-# ==========================================================================
+# C1 - unicitatea identificatorilor [DONE]
 
 def check_unique_ids(ds: Dataset) -> list[Issue]:
     issues: list[Issue] = []
@@ -89,9 +87,8 @@ def check_unique_ids(ds: Dataset) -> list[Issue]:
     return issues
 
 
-# ==========================================================================
-# C2 — integritatea referențială                                   [IMPLEMENTAT]
-# ==========================================================================
+
+# C2 - integritatea referențială [DONE]
 
 def check_referential_integrity(ds: Dataset) -> list[Issue]:
     issues: list[Issue] = []
@@ -118,9 +115,8 @@ def check_referential_integrity(ds: Dataset) -> list[Issue]:
     return issues
 
 
-# ==========================================================================
-# C3 — coerența etichetă / dovezi                                  [IMPLEMENTAT]
-# ==========================================================================
+
+# C3 - coerența etichetă / dovezi [DONE]
 
 def check_label_evidence_consistency(ds: Dataset) -> list[Issue]:
     """Invarianții de bază sunt deja în schema Pydantic; aici verificăm
@@ -166,9 +162,8 @@ def check_label_evidence_consistency(ds: Dataset) -> list[Issue]:
     return issues
 
 
-# ==========================================================================
-# C4 — sursele media nu pot fi ground truth                        [IMPLEMENTAT]
-# ==========================================================================
+
+# C4 - sursele media nu pot fi ground truth [DONE]
 
 def check_media_never_gold(ds: Dataset) -> list[Issue]:
     """Regula centrală a proiectului. Dacă pică asta, datasetul e compromis."""
@@ -194,31 +189,26 @@ def check_media_never_gold(ds: Dataset) -> list[Issue]:
     return issues
 
 
-# ==========================================================================
-# C5 — leakage prin family_id                                            [TODO]
-# ==========================================================================
+# C5 - leakage prin family_id [DONE]
 
 def check_family_split_leakage(ds: Dataset) -> list[Issue]:
-    """TODO — cea mai importantă verificare din tot fișierul.
+    issues : list[Issue] = []
+    claims_by_family : dict[str, list[tuple[str, str]]] = defaultdict(list)
 
-    Fiecare `family_id` trebuie să apară într-un SINGUR split. Dacă varianta
-    corectă a unei afirmații e în train și cea perturbată în test, modelul a
-    văzut deja răspunsul și rezultatele tale sunt false.
+    for claim in ds.claims:
+        if claim.split is None:
+            continue
+        claims_by_family[claim.family_id].append((claim.split.value, claim.claim_id))
 
-    De implementat:
-      1. grupează claims-urile după family_id;
-      2. pentru fiecare familie, colectează mulțimea de split-uri (ignoră None);
-      3. dacă o familie are >1 split -> Issue("error", "C5", ...) cu family_id
-         și lista de (claim_id, split);
-      4. raportează separat familiile cu split=None după S9 ca warning
-         (înseamnă claims neatribuite).
-    """
-    raise NotImplementedError("C5: implementează verificarea de leakage")
+    for family_id, entries in claims_by_family.items():
+        distinct_splits = {split for split, _ in entries}
+        if len(distinct_splits) > 1:
+            splits_spread = ", ".join(f"{claim_id} = {split}" for split, claim_id in sorted(entries))
+            issues.append(Issue("error", "C5", f"family_id '{family_id}' e împrăștiat în {len(distinct_splits)} split-uri : {splits_spread}"))
+    return issues
 
 
-# ==========================================================================
-# C6 — cvasi-duplicate între claims                                      [TODO]
-# ==========================================================================
+# C6 — cvasi-duplicate între claims [TODO]
 
 def check_near_duplicate_claims(ds: Dataset, threshold: float = 0.9) -> list[Issue]:
     """TODO — două afirmații aproape identice în split-uri diferite = leakage
@@ -235,9 +225,7 @@ def check_near_duplicate_claims(ds: Dataset, threshold: float = 0.9) -> list[Iss
     raise NotImplementedError("C6: implementează detecția de cvasi-duplicate")
 
 
-# ==========================================================================
-# C7 — echilibrul claselor și al domeniilor                              [TODO]
-# ==========================================================================
+# C7 - echilibrul claselor și al domeniilor [TODO]
 
 def check_class_balance(ds: Dataset, tolerance: float = 0.10) -> list[Issue]:
     """TODO — clasele trebuie să fie în ±10% de la echilibru (fără MIXED, care
@@ -256,9 +244,7 @@ def check_class_balance(ds: Dataset, tolerance: float = 0.10) -> list[Issue]:
     raise NotImplementedError("C7: implementează verificarea de echilibru")
 
 
-# ==========================================================================
-# C8 — artefacte de perturbare                                           [TODO]
-# ==========================================================================
+# C8 - artefacte de perturbare [TODO]
 
 def check_perturbation_diversity(ds: Dataset, max_share: float = 0.40) -> list[Issue]:
     """TODO — dacă >40% din afirmațiile `constructed` folosesc aceeași
@@ -275,9 +261,7 @@ def check_perturbation_diversity(ds: Dataset, max_share: float = 0.40) -> list[I
     raise NotImplementedError("C8: implementează verificarea de diversitate")
 
 
-# ==========================================================================
-# C9 — acoperirea țintelor de dataset                                    [TODO]
-# ==========================================================================
+# C9 - acoperirea țintelor de dataset [TODO]
 
 def check_coverage_targets(ds: Dataset) -> list[Issue]:
     """TODO — țintele din spec, verificate automat ca să nu descoperi la S12
@@ -297,9 +281,7 @@ def check_coverage_targets(ds: Dataset) -> list[Issue]:
     raise NotImplementedError("C9: implementează verificarea de acoperire")
 
 
-# ==========================================================================
-# C10 — licențe și snapshot-uri                                          [TODO]
-# ==========================================================================
+# C10 - licențe și snapshot-uri [TODO]
 
 def check_licenses_and_snapshots(ds: Dataset) -> list[Issue]:
     """TODO — igienă de date, ieftin de verificat, scump de reparat la S12.
@@ -316,9 +298,6 @@ def check_licenses_and_snapshots(ds: Dataset) -> list[Issue]:
     raise NotImplementedError("C10: implementează verificarea de licențe/snapshot")
 
 
-# ==========================================================================
-# Runner                                                                   #
-# ==========================================================================
 
 CHECKS = [
     ("C1  unicitate ID-uri", check_unique_ids),

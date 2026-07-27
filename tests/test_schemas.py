@@ -17,6 +17,9 @@ import pytest
 from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+from validate_data import Dataset, check_family_split_leakage
 
 from rofact.io import normalize_text, sha256_text, stable_id
 from rofact.schemas import (
@@ -54,9 +57,7 @@ def make_claim(**kw):
     return Claim(**base)
 
 
-# --------------------------------------------------------------------------- #
-# Claim                                                                        #
-# --------------------------------------------------------------------------- #
+# Claim
 
 def test_claim_valid():
     c = make_claim()
@@ -116,9 +117,7 @@ def test_extra_fields_rejected():
         make_claim(anotator_confidence=0.9)  # typo intenționat
 
 
-# --------------------------------------------------------------------------- #
-# ClaimPassagePair — cele două axe                                             #
-# --------------------------------------------------------------------------- #
+# ClaimPassagePair — cele două axe
 
 def test_media_can_support_a_false_claim():
     """Cazul central al proiectului: un articol susține TEXTUAL o afirmație falsă.
@@ -167,9 +166,7 @@ def test_gold_requires_strong_quality():
         )
 
 
-# --------------------------------------------------------------------------- #
-# Document / Passage                                                           #
-# --------------------------------------------------------------------------- #
+# Document / Passage
 
 def test_document_requires_sha256():
     with pytest.raises(ValidationError, match="sha256"):
@@ -188,9 +185,7 @@ def test_passage_offsets():
                 char_start=100, char_end=50)
 
 
-# --------------------------------------------------------------------------- #
-# io                                                                           #
-# --------------------------------------------------------------------------- #
+# io
 
 def test_normalize_unifies_romanian_diacritics():
     """ş/ţ cu sedilă (U+015F/U+0163) vs. ș/ț cu virgulă (U+0219/U+021B).
@@ -213,3 +208,39 @@ def test_stable_id_is_deterministic():
     re-rulare a ingest-ului rupe toate adnotările."""
     assert stable_id("ins", "POP105A", "2023") == stable_id("ins", "POP105A", "2023")
     assert stable_id("ins", "POP105A", "2023") != stable_id("ins", "POP105A", "2024")
+
+
+
+def test_c5_detects_leakage():
+    test_dataset = Dataset(
+        documents = [],
+        passages = [],
+        claims = [
+            make_claim(claim_id = "ro_1", family_id = "fam_x", split = Split.TRAIN),
+            make_claim(claim_id = "ro_2", family_id = "fam_x", split = Split.TEST)
+        ],
+        pairs = []
+    )
+
+    issues = check_family_split_leakage(test_dataset)
+
+    assert len(issues) == 1
+    assert issues[0].check == "C5"
+    assert issues[0].severity == "error"
+    assert "fam_x" in issues[0].message
+
+
+def test_c5_accepts_same_split():
+    test_dataset = Dataset(
+        documents = [],
+        passages = [],
+        claims = [
+            make_claim(claim_id = "ro_1", family_id = "fam_x", split = Split.TRAIN),
+            make_claim(claim_id = "ro_2", family_id = "fam_x", split = Split.TRAIN)
+        ],
+        pairs = []
+    )
+
+    issues = check_family_split_leakage(test_dataset)
+
+    assert len(issues) == 0
