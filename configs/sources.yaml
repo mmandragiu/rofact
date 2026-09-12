@@ -2,35 +2,33 @@
 #
 # Fiecare intrare descrie O sursă. Câmpul `license` ajunge direct în
 # Document.license, iar validatorul (C10) refuză "unknown" pentru G1/G2.
-#
-# STATUS: `verified` înseamnă că TU ai citit termenii de utilizare și ai notat
-# data. Nu marca nimic verified pe încredere — e singurul lucru din proiect care
-# poate crea o problemă reală dacă publici datasetul.
 
 schema_version: "1.0.0"
 
 sources:
 
-  # ======================================================================
-  # G1 — date primare structurate
-  # ======================================================================
+  # G1 - date primare structurate
 
   eurostat:
     tier: G1
-    name: "Eurostat — baza de date de diseminare"
+    name: "Eurostat - baza de date de diseminare"
     homepage: "https://ec.europa.eu/eurostat/data/database"
     access: api
     api_base: "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data"
     format: json-stat2
-    # Exemplu confirmat funcțional:
-    #   {api_base}/une_rt_a?format=JSON&geo=RO&lang=RO&sex=T&unit=PC_ACT
-    license: "Eurostat reuse policy (atribuire obligatorie)"
-    license_url: "https://ec.europa.eu/eurostat/about-us/policies/copyright"
-    license_status: to_verify        # TODO: citește și pune data verificării
-    robots_checked: false            # TODO
+    license: "Eurostat reuse policy (attribution required)"
+    license_url: "https://ec.europa.eu/eurostat/help/copyright-notice"
+    license_status: verified
+    license_verified_on: 2026-07-28
+    attribution: "Source: Eurostat, dataset {code}, accessed {retrieved_at}"
+    notes_license: >
+      Reutilizare comercială și necomercială permisă cu atribuire (Decizia
+      Comisiei din 12.12.2011). Excepție irelevantă pentru proiect: datele
+      despre țări non-UE sunt doar non-comerciale, folosim doar RO + UE.
+    robots_checked: n/a
     topics: [economie, demografie, statistici_ro_ue]
     notes: >
-      Baza curentă NU versionează valorile istorice — o re-descărcare poate da
+      Baza curentă NU versionează valorile istorice - o re-descărcare poate da
       alte cifre pentru același an. De aceea toate experimentele rulează pe
       snapshot-uri fixe cu hash. Vezi docs/source_registry.md.
     datasets:                        # TODO: extinde lista pe măsură ce lucrezi
@@ -38,7 +36,7 @@ sources:
         label: "Rata șomajului, date anuale"
         topic: economie
       - code: prc_hicp_aind
-        label: "HICP — rata anuală a inflației"
+        label: "HICP - rata anuală a inflației"
         topic: economie
       - code: demo_gind
         label: "Indicatori demografici principali"
@@ -52,23 +50,36 @@ sources:
 
   ins_tempo:
     tier: G1
-    name: "INS — TEMPO Online"
+    name: "INS - TEMPO Online"
     homepage: "https://statistici.insse.ro/tempoins/"
-    access: api
+    access: manual_download
     api_base: "http://statistici.insse.ro:8077/tempo-ins"
     format: json
     endpoints:
-      tree: "{api_base}/context/{code}"           # arborele tematic
-      matrix_meta: "{api_base}/matrix/{matrix}"   # dimensiuni + definiție + metodologie
-      matrix_data: "{api_base}/matrix/dataSet/{matrix}"   # POST — VERIFICĂ payload-ul în DevTools
-    license: "date publice INS"
-    license_url: "https://insse.ro/cms/ro/content/termeni-si-conditii"
-    license_status: to_verify        # TODO
-    robots_checked: false            # TODO
+      tree: "{api_base}/context/{code}"
+      matrix_meta: "{api_base}/matrix/{matrix}"
+      matrix_data: "{api_base}/matrix/dataSet/{matrix}"
+    license: "INS Romania - published statistics, free reuse with source attribution (Law 109/2007); manual download only"
+    license_url: "https://insse.ro/cms/ro/content/reutilizarea-statisticilor-sse"
+    license_status: verified
+    license_verified_on: 2026-08-04
+    license_evidence: "Email INS, Direcția de Diseminare Date Statistice, 2026-08-04"
+    attribution: "Sursa: INS România, {matrix_name}, {year}, www.insse.ro"
+    notes_license: >
+      CONFIRMAT PRIN EMAIL de la INS (Direcția de Diseminare Date Statistice,
+      2026-08-04), ca răspuns la solicitare scrisă:
+      (1) reutilizarea nu necesită acord prealabil — doar menționarea originii
+          conform paginii de reutilizare (Legea 109/2007);
+      (2) redistribuirea seturilor ÎMPREUNĂ cu definițiile și precizările
+          metodologice e permisă, cu mențiunea sursei;
+      (3) RESTRICȚIE: datele din TEMPO Online se descarcă DOAR MANUAL.
+      Prin urmare NU folosim API-ul de pe portul 8077. ingest/ins_tempo.py devine
+      parser pentru exporturile manuale, nu client de API.
+    robots_checked: n/a
     topics: [economie, demografie]
     notes: >
       API nedocumentat public dar stabil. Răspunsul /matrix/{cod} conține
-      `definitie`, `metodologie`, `observatii` și `ultimaActualizare` — text
+      `definitie`, `metodologie`, `observatii` și `ultimaActualizare` - text
       narativ oficial, foarte bun ca pasaje G1 pentru claims despre definiții.
       Rate limit necunoscut: pune delay de 1-2s între cereri.
     matrices:                        # TODO: extinde
@@ -82,7 +93,7 @@ sources:
 
   data_gov_ro:
     tier: G1
-    name: "data.gov.ro — portalul de date deschise"
+    name: "data.gov.ro - portalul de date deschise"
     homepage: "https://data.gov.ro/"
     access: api
     api_base: "https://data.gov.ro/api/3/action"
@@ -90,73 +101,158 @@ sources:
     endpoints:
       search: "{api_base}/package_search?q={query}&rows={rows}"
       show: "{api_base}/package_show?id={id}"
-    license: "per dataset — vezi câmpul license_id din CKAN"
+    license: "per dataset - CC-BY-4.0 or OGL-ROU-1.0 (both require attribution)"
+    license_url: "https://data.gov.ro/pages/licenta-deschisa"
     license_status: per_resource
-    robots_checked: false            # TODO
+    license_verified_on: 2026-07-28
+    attribution: "Source: {publisher}, {dataset_title}, data.gov.ro ({license_id}), accessed {retrieved_at}"
+    notes_license: >
+      Cadru: Legea 179/2022 (Directiva UE 1024/2019). Verificat pe 50 de seturi:
+      100% au licență declarată - CC-BY-4.0 (~56%) sau OGL-ROU-1.0 (~44%), ambele
+      permisive cu atribuire. Se copiază `license_id` per document, nu global.
+      Regulă: set fără licență declarată -> nu se include.
+    robots_checked: n/a
+    api_status: verified_working
+    notes_formats: >
+      API-ul dă doar METADATE. Datele reale sunt XLSX/XLS (~80%) și PDF
+      (~20%), câte un layout per instituție, nu există parser generic. CSV aproape
+      absent (1 din 133 resurse verificate). Decizie de luat la S3: seturi puține
+      și bine alese, sau pivot pe rapoarte PDF. Necesită openpyxl (xlsx) + xlrd (xls).
     topics: [administratie_publica]
     notes: >
       Licența diferă de la dataset la dataset. Copiaz-o în Document.license
       din `license_id`/`license_title`, nu pune o valoare globală.
-      TODO: verifică accesul — la testarea inițială API-ul a răspuns gol.
+      TODO: verifică accesul - la testarea inițială API-ul a răspuns gol.
 
-  # ======================================================================
-  # G2 — documente oficiale
-  # ======================================================================
+  # G2 - documente oficiale
 
   bnr:
     tier: G2
-    name: "Banca Națională a României — rapoarte"
-    homepage: "https://www.bnr.ro/Publicatii-periodice-204.aspx"
+    name: "Banca Națională a României - rapoarte și date"
+    homepage: "https://www.bnr.ro/"
     access: download
     format: pdf
-    license: "date publice BNR"
-    license_status: to_verify        # TODO
+    license: "BNR - free access to published information; redistribution permitted with source attribution"
+    license_url: "https://www.bnr.ro/2281-termeni-si-conditii"
+    license_status: verified
+    license_verified_on: 2026-08-05
+    attribution: "Sursa: Banca Națională a României, {publicatie}, {an}, www.bnr.ro"
+    robots_checked: true
+    xml_feeds:
+      current: "https://www.bnr.ro/nbrfxrates.xml"
+      by_year: "https://www.bnr.ro/files/xml/years/nbrfxrates{year}.xml"
+    notes_license: >
+      Termeni verificați 2026-08-05. „Redistribuirea sub orice formă și prin orice
+      mijloace a conținutului informațional este permisă numai cu indicarea sursei."
+      Deci redistribuirea pasajelor în dataset e acoperită, cu atribuire.
+      CLAUZĂ APLICABILĂ: „în cazul alterării informației preluate, acest lucru
+      trebuie menționat explicit" -> în data card declarăm că pasajele G2 sunt
+      FRAGMENTE EXTRASE din documentele originale (nu modificate), cu link la sursa
+      integrală; char_start/char_end asigură trasabilitatea.
+      EXCLUSE: fotografii/grafică de la terți, monograma și logoul BNR (mărci
+      înregistrate) - nu le folosim oricum.
+      Uz comercial: permis, cu informarea clienților că datele sunt gratuite pe
+      site-ul BNR. Irelevant pentru proiect (academic, necomercial).
+      CONDIȚIONAT: dacă folosim feed-urile XML de cursuri (preluare automată,
+      dinamică), termenii trimit la „pagina dedicată dezvoltatorilor de software"
+      ale cărei recomandări trebuie respectate - DE CITIT ÎNAINTE, la S5, dacă se
+      decide includerea cursurilor valutare. Pentru rapoartele PDF (descărcare
+      punctuală) nu se aplică.
     topics: [economie]
     notes: "Rapoarte asupra inflației, rapoarte anuale. Text narativ, complementar cifrelor."
 
   min_finante:
     tier: G2
-    name: "Ministerul Finanțelor — buget și execuție bugetară"
+    name: "Ministerul Finanțelor - buget și execuție bugetară"
     homepage: "https://mfinante.gov.ro/"
     access: download
     format: pdf
-    license: "date publice"
-    license_status: to_verify        # TODO
+    license: "Public interest information (Law 544/2001); official administrative texts not copyright-protected (Law 8/1996 art. 9)"
+    license_url: "https://mfinante.gov.ro/ro/despre-minister/informatii-publice"
+    license_status: verified_by_legal_framework
+    license_verified_on: 2026-08-05
+    attribution: "Sursa: Ministerul Finanțelor, {document}, {an}, mfinante.gov.ro"
+    robots_checked: true
+    notes_license: >
+      NU există pagină de termeni de utilizare. Nota din subsol („modificarea
+      neautorizată a site-ului constituie infracțiune", Legea 161/2003) e o
+      avertizare anti-intruziune, NU o restricție de reutilizare.
+      Temei asumat, prin inferență din cadrul legal:
+        - Legea 544/2001 - bugetele și execuțiile sunt informații de interes public;
+        - Legea 8/1996 art. 9 - textele oficiale de natură ADMINISTRATIVĂ nu sunt
+          protejate de drept de autor (același principiu ca la actele normative);
+        - Legea 179/2022 - date deschise, „deschis implicit" pentru sectorul public.
+      DIFERENȚĂ FAȚĂ DE CELELALTE SURSE: aici verdictul e o inferență juridică, nu
+      o permisiune explicită. Se declară ca atare în data card. Dacă apare vreo
+      îndoială, se poate cere confirmare scrisă (publicinfo@mfinante.gov.ro),
+      la fel ca la INS.
+      Doar 2 seturi MF pe data.gov.ro -> ruta cu licență explicită nu e viabilă aici.
     topics: [administratie_publica, economie]
 
   legislatie_just:
     tier: G2
-    name: "Portalul Legislativ — legislatie.just.ro"
+    name: "Portalul Legislativ - legislatie.just.ro"
     homepage: "https://legislatie.just.ro/"
-    access: scraping
-    format: html
-    license: "acte normative — text oficial, domeniu public"
-    license_status: to_verify        # TODO
-    robots_checked: false            # TODO — OBLIGATORIU înainte de orice request
+    access: api
+    api_base: "http://legislatie.just.ro/apiws/FreeWebService.svc/SOAP"
+    api_docs: "https://legislatie.just.ro/ServiciulWebLegislatie.htm"
+    format: soap
+    license: "Official legislative texts are not copyright-protected (Law 8/1996); reuse permitted"
+    license_url: "https://legislatie.just.ro/Public/Termeni"
+    license_status: verified
+    license_verified_on: 2026-08-05
+    attribution: "Sursa: Portalul Legislativ, legislatie.just.ro, {tip_act} nr. {numar}, în vigoare din {data_vigoare}"
+    robots_checked: unreachable      # 302 redirect loop; irelevant - folosim API-ul oficial
+    api_status: verified_working
+    notes_license: >
+      Textele actelor normative NU sunt protejate de drept de autor (Legea 8/1996).
+      „Toate drepturile rezervate" din subsol privește portalul, nu textele.
+      Ministerul publică un serviciu web oficial => accesul programatic e sancționat.
+      ATENȚIE METODOLOGIC: doar Monitorul Oficial e autentic juridic; formele
+      consolidate sunt neoficiale, cu scop consultativ — se declară în data card.
+      Câmpul DataVigoare permite reținerea formei preluate.
+    notes_api: >
+      CAPCANE (documentația de pe site e incompletă):
+      1. endpoint-ul are sufixul /SOAP; fără el -> 404;
+      2. Search NU ia parametri plați, ci <SearchModel> (NumarPagina,
+         RezultatePagina, SearchAn, SearchNumar, SearchText, SearchTitlu) + tokenKey;
+      3. fluxul e GetToken -> Search; token-ul expiră.
+      Câmpuri returnate: Titlu, Numar, TipAct, Emitent, Publicatie, DataVigoare,
+      LinkHtml, Text (INTEGRAL — 24k caractere pentru o HG testată).
+      Nu necesită zeep/suds — urllib + xml.etree din stdlib sunt suficiente.
+      DE VERIFICAT: diacriticele ș/ț par înlocuite cu '?' în răspuns
+      (ex. „Pre?edintele"), în timp ce Ă/Â trec corect. Diagnostichează encoding-ul
+      înainte de a construi corpusul legislativ.
     topics: [legislatie]
     crawl_policy:
       delay_seconds: 3
       max_documents: 30              # NU indexa corpusul legislativ. 20-30 de acte, atât.
       user_agent: "RoFact-research/0.1 (proiect studențesc; contact: <email>)"
     notes: >
-      Segmentare pe ARTICOL, nu pe fereastră de cuvinte — articolul e unitatea
+      Segmentare pe ARTICOL, nu pe fereastră de cuvinte - articolul e unitatea
       naturală de citare. Restrânge claims-urile la fapte literale: existența
       unui articol, o dată de intrare în vigoare, un prag numeric, o abrogare.
       Interpretarea juridică e în afara scopului v1.
 
-  # ======================================================================
-  # G3 — fact-check documentat (DOAR pentru descoperire)
-  # ======================================================================
+  # G3 - fact-check documentat (DOAR pentru descoperire)
 
   factual_ro:
     tier: G3
     name: "Factual.ro"
     homepage: "https://www.factual.ro/"
-    access: scraping
+    access: manual_discovery
     format: html
-    license: "TODO — verifică termenii înainte de a stoca text integral"
-    license_status: to_verify        # TODO
-    robots_checked: false            # TODO
+    license: "content rights reserved - discovery only, no article text stored"
+    license_status: verified_restricted
+    license_verified_on: 2026-08-05
+    robots_checked: disallowed       # 2026-08-05: "User-agent: * / Disallow: /"
+    notes_license: >
+      robots.txt INTERZICE EXPLICIT crawling-ul automat: permite doar Googlebot,
+      Bingbot, DuckDuckBot, Applebot; "User-agent: * / Disallow: /" pentru restul.
+      DECIZIE: descoperire exclusiv MANUALĂ (citire în browser), fără script.
+      Nu contravine planului - folosirea era oricum discovery_only.
+      Se stochează DOAR: URL + afirmația publică reformulată atomic + lista
+      surselor primare citate. Niciodată textul articolului.
     topics: [economie, administratie_publica, legislatie]
     usage: discovery_only
     notes: >
@@ -169,16 +265,24 @@ sources:
     tier: G3
     name: "AFP Fact Check România"
     homepage: "https://factcheck.afp.com/AFP-Romania"
-    access: scraping
+    access: manual_discovery
     format: html
-    license: "TODO — conținut AFP, drepturi rezervate; probabil doar link + citat scurt"
-    license_status: to_verify        # TODO
+    license: "AFP content - all rights reserved; discovery only"
+    license_status: verified_restricted
+    license_verified_on: 2026-08-05
+    robots_checked: unreachable      # 2026-08-05: certificat SSL expirat pe factcheck.afp.com
     usage: discovery_only
+    notes_license: >
+      Nu am putut verifica robots.txt: certificatul SSL al site-ului e EXPIRAT
+      (eroare de verificare, 2026-08-05) - problemă pe serverul lor.
+      AFP e agenție de presă cu drepturi rezervate stricte. Tratăm conservator,
+      identic cu Factual.ro: descoperire manuală, se stochează doar URL +
+      afirmația extrasă + sursele citate. Niciodată text AFP.
+      O afirmație publică rostită de un politician nu e proprietatea AFP - noi
+      preluăm faptul că afirmația există, nu formularea lor.
 
-  # ======================================================================
-  # MEDIA — corpusul de distractori
-  # ======================================================================
-  #
+  # MEDIA - corpusul de distractori
+
   # TODO (S4): completează 12-15 publicații diverse. Criterii de selecție:
   #   - diversitate de tip: agenție / cotidian / economic / regional / online-only
   #   - diversitate editorială (nu toate din aceeași familie de proprietate)

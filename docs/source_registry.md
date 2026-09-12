@@ -8,20 +8,53 @@ ce nu încape într-un YAML: cum se accesează efectiv fiecare sursă, ce capcan
 
 ## Starea verificărilor
 
-> **TODO S1 — 4h.** Nicio sursă nu se folosește în producție până nu are ambele
-> coloane completate. Pune data la care ai verificat, nu doar bifa.
+> **Verificat complet: 2026-08-05.** Fiecare rând are data la care au fost citiți
+> termenii, nu doar bifa. Configurația executabilă corespunzătoare e în
+> `configs/sources.yaml` (câmpurile `license_status`, `access`, `robots_checked`).
 
-| Sursă | Tier | Licență verificată | `robots.txt` verificat | Data |
-|---|---|---|---|---|
-| Eurostat | G1 | ☐ | ☐ | |
-| INS TEMPO | G1 | ☐ | ☐ | |
-| data.gov.ro | G1 | ☐ (per dataset) | ☐ | |
-| BNR | G2 | ☐ | ☐ | |
-| Ministerul Finanțelor | G2 | ☐ | ☐ | |
-| legislatie.just.ro | G2 | ☐ | ☐ | |
-| Factual.ro | G3 | ☐ | ☐ | |
-| AFP Fact Check RO | G3 | ☐ | ☐ | |
-| media (×12–15) | MEDIA | ☐ | ☐ | |
+| Sursă | Tier | Licență | `robots.txt` | Acces | Verdict | Data |
+|---|---|---|---|---|---|---|
+| Eurostat | G1 | ✅ | n/a (API public) | api | reutilizare liberă cu atribuire | 2026-08-05 |
+| INS TEMPO | G1 | ✅ **email** | n/a | **manual_download** | liber cu atribuire, **doar descărcare manuală** | 2026-08-04 |
+| data.gov.ro | G1 | ✅ per dataset | n/a | api (CKAN) | CC-BY-4.0 / OGL-ROU-1.0 | 2026-08-05 |
+| BNR | G2 | ✅ | ✅ permisiv | download | redistribuire cu indicarea sursei | 2026-08-05 |
+| Ministerul Finanțelor | G2 | ⚠️ inferență | ✅ permisiv | download | ok — fără termeni expliciți | 2026-08-05 |
+| legislatie.just.ro | G2 | ✅ | ⚠️ inaccesibil | **api (SOAP)** | texte în domeniu public (L. 8/1996) | 2026-08-05 |
+| Factual.ro | G3 | ✅ restrictiv | ⛔ `Disallow: /` | manual_discovery | doar descoperire, fără text | 2026-08-05 |
+| AFP Fact Check RO | G3 | ⚠️ conservator | ⚠️ SSL expirat | manual_discovery | doar descoperire, fără text | 2026-08-05 |
+| media (×12–15) | MEDIA | ☐ | ☐ | — | **TODO S4** | — |
+
+### Ce a rezultat, pe scurt
+
+**Nicio sursă respinsă.** Trei și-au schimbat modul de acces față de planul inițial:
+
+| Sursă | Din | În | De ce |
+|---|---|---|---|
+| INS TEMPO | client API | descărcare manuală | răspuns scris de la INS: „datele din TEMPO se descarcă doar manual" |
+| legislatie.just.ro | scraping (8h) | **API SOAP oficial** (~3h) | ministerul publică un serviciu web documentat |
+| Factual.ro / AFP | scraping | descoperire manuală | `robots.txt` interzice explicit (Factual); drepturi rezervate (AFP) |
+
+**Două clauze cu impact metodologic**, ambele întărind discipline pe care le aveam
+deja din motive științifice:
+
+- **INS — nedenaturare:** „orice denaturare de la semnificația reală a datelor este
+  interzisă". Se aplică direct verbalizării tabelelor: „populația rezidentă" nu
+  devine „populația României".
+- **BNR — semnalarea alterării:** „în cazul alterării informației preluate, acest
+  lucru trebuie menționat explicit". În data card declarăm că pasajele G2 sunt
+  fragmente extrase, netransformate; `char_start`/`char_end` asigură trasabilitatea.
+
+**De declarat în data card ca limitări:**
+1. ground truth-ul pentru legislație se bazează pe **forme consolidate neoficiale**
+   (doar Monitorul Oficial e autentic juridic);
+2. licența Ministerului Finanțelor e stabilită prin **inferență din cadrul legal**
+   (L. 544/2001 + L. 8/1996 art. 9 + L. 179/2022), nu prin termeni expliciți;
+3. acoperirea INS e limitată de cerința de descărcare manuală — un număr restrâns
+   de matrici selectate, nu întreaga bază TEMPO.
+
+**Opțional, nefăcut:** email de confirmare către `publicinfo@mfinante.gov.ro`, care
+ar transforma inferența juridică de la punctul 2 într-o confirmare scrisă (același
+procedeu care a funcționat la INS).
 
 ---
 
@@ -104,13 +137,48 @@ https://data.gov.ro/api/3/action/package_search?q={query}&rows={n}
 https://data.gov.ro/api/3/action/package_show?id={dataset_id}
 ```
 
-**TODO:** la testarea inițială API-ul a răspuns gol prin proxy. Verifică local,
-direct din browser sau cu `requests`, înainte să investești în `ingest/datagov.py`.
-Dacă e indisponibil, alternativa pentru administrație publică sunt rapoartele de
-activitate instituționale în PDF (tot G2).
+**Stare API: verificat funcțional (2026-07-28).** TODO-ul anterior („a răspuns
+gol prin proxy") era un artefact de rețea, nu o problemă a portalului.
+
+    status_show      -> HTTP 200
+    package_list     -> 5.214 seturi de date
+    package_search?q=buget&rows=3  -> 185 rezultate
+
+Fără cheie de API pentru citire (cheia e necesară doar la *crearea* de seturi).
+Documentația: https://data.gov.ro/pages/developers
 
 **Licența diferă per dataset** — o iei din `license_id` / `license_title` și o pui
-în `Document.license`. Nu presupune o licență globală.
+în `Document.license`. Nu presupune o licență globală. Verificat pe un eșantion de
+50 de seturi: **toate** au licență declarată, doar două valori —
+`CC-BY-4.0` (~56%) și `uk-ogl` / `OGL-ROU-1.0` (~44%), ambele permisive cu
+atribuire. Regulă operațională: un set fără licență declarată nu se include.
+
+### Capcana reală: formatele
+
+API-ul întoarce **doar metadate**. Datele propriu-zise sunt fișiere atașate, iar
+distribuția lor (pe 133 de resurse verificate) e:
+
+| Format | Pondere |
+|---|---|
+| XLSX / XLS | ~80% |
+| PDF | ~20% |
+| CSV | 1 resursă din 133 |
+
+Fiecare instituție își structurează Excel-ul altfel — antete pe rânduri diferite,
+foi multiple, denumiri de coloane proprii. **Nu există parser generic**; fiecare
+set cere mapare manuală. Multe seturi au `metadata_modified` în 2023 sau mai
+devreme, deci actualizarea nu e garantată.
+
+**Decizie de luat la S3** (nu acum), pentru cele 110 claims de administrație:
+
+| Opțiune | Ce implică |
+|---|---|
+| A. data.gov.ro restrâns | 5–8 seturi cu structură consistentă, mapate manual o dată. Un tabel bugetar dă multe valori, deci 110 claims e fezabil |
+| B. Pivot pe rapoarte PDF instituționale | Text narativ cu `pdfplumber` (deja în requirements). Pasaje mai naturale pentru retrieval decât tabelele verbalizate |
+| C. Mixt | 2–3 seturi Excel pentru cifre + PDF-uri pentru context narativ. Probabil cel mai bun raport valoare/efort |
+
+Dacă alegi Excel: adaugă `openpyxl` (pentru `.xlsx`) și `xlrd` (pentru `.xls`) în
+`requirements.txt` — pandas nu le citește fără ele.
 
 ---
 
