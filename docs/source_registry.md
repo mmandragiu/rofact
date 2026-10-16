@@ -64,7 +64,7 @@ procedeu care a funcționat la INS).
 
 ```
 https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/{dataset}
-    ?format=JSON&lang=RO&geo=RO&sex=T&unit=PC_ACT
+    ?format=JSON&lang=EN&geo=RO&geo=EU27_2020&sinceTimePeriod=2010&sex=T&unit=PC_ACT
 ```
 
 Răspunsul e **JSON-stat 2.0**: un vector plat `value` plus `dimension` cu indexul
@@ -73,10 +73,18 @@ folosind `size` și ordinea din `id`. Vezi `ingest/eurostat.py`.
 
 **Capcane:**
 
-- Coduri de dimensiune invalide **nu dau eroare** — întorc `value: {}` gol și
-  categoria goală în `dimension`. Verifică întotdeauna că ai primit date; altfel
+- Coduri **invalide pentru o dimensiune validă** (ex. `sex=XX`) nu dau eroare — întorc
+  HTTP 200 cu `value: {}` gol (confirmat 2026-09-21). O dimensiune inexistentă dă în
+  schimb HTTP 400. Verifică întotdeauna că ai primit date; altfel
   vei crede că indicatorul nu există.
-- `lang=RO` traduce etichetele, ceea ce e util pentru verbalizare în română.
+- **`lang` acceptă doar `EN`, `FR`, `DE`.** `lang=RO` întoarce HTTP 400 (verificat
+  2026-09-21; scheletul inițial presupunea greșit că merge). Descărcăm în engleză și
+  traducem etichetele noi, pe baza **codurilor**, în `LABELS_RO` din `ingest/eurostat.py`.
+- Mai multe valori pentru aceeași dimensiune = parametru repetat (`geo=RO&geo=BG`).
+- Țările **nu vin în ordinea cerută** — decodarea trebuie să folosească indexul din
+  `dimension[d].category.index`, niciodată ordinea de listare.
+- Structura dataset-urilor se schimbă: `ilc_li02` nu mai are `indic_il`, ci
+  `statinfo` + `rskpovth`. Codurile din `STARTER_DATASETS` sunt verificate pe API-ul live.
 - `extension.annotation` conține `UPDATE_DATA` — folosește-l ca `published_at`.
 - Baza **nu versionează** valorile istorice. De aici toată disciplina de snapshot.
 

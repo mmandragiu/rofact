@@ -7,6 +7,7 @@ este pasul care transformă statistica în dovadă citabilă.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Iterator
 
 from rofact.schemas import Document, Passage
@@ -123,7 +124,7 @@ def verbalize_table(doc: Document, rows: list[dict], *,
 
 
 def format_number_ro(value: float, *, decimals: int | None = None) -> str:
-    """TODO (20 min) — formatare în convenție românească.
+    """Format a number the Romanian way: decimal comma, dot between thousands.
 
     >>> format_number_ro(5.6)
     '5,6'
@@ -132,10 +133,18 @@ def format_number_ro(value: float, *, decimals: int | None = None) -> str:
     >>> format_number_ro(1234.5, decimals=1)
     '1.234,5'
 
-    Nu folosi `locale` — depinde de setările sistemului și îți va da rezultate
-    diferite pe mașina ta față de CI. Implementează manual.
+    Written by hand instead of using `locale`: locale output depends on the
+    machine's settings, so this laptop and CI would disagree.
     """
-    raise NotImplementedError
+    if decimals is None:
+        if float(value).is_integer():
+            decimals = 0
+        else:
+            # As many decimals as the shortest exact form has: 5.6 -> 1, 0.25 -> 2.
+            decimals = max(0, -Decimal(repr(float(value))).as_tuple().exponent)
+    text = f"{abs(value):,.{decimals}f}"                                # '1,234.5'
+    text = text.replace(",", " ").replace(".", ",").replace(" ", ".")   # '1.234,5'
+    return f"-{text}" if value < 0 else text
 
 
 def build_passages(documents: list[Document]) -> list[Passage]:

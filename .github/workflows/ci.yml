@@ -18,7 +18,7 @@ jobs:
 
       - name: Instalează dependențele de bază
         # Doar nucleul — torch/transformers ar face CI-ul inutil de lent.
-        run: pip install pydantic PyYAML pytest ruff
+        run: pip install pydantic PyYAML pytest ruff requests
 
       - name: Lint
         run: ruff check src scripts tests

@@ -1,30 +1,29 @@
 """Infrastructură comună de ingest: snapshot-uri, HTTP politicos, manifest.
 
-Modul aproape complet — două TODO-uri mici marcate mai jos.
+Modul complet.
 """
 
 from __future__ import annotations
 
 import json
 import time
+import warnings
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import requests
+import yaml
 
 from rofact import io
 from rofact.schemas import SnapshotEntry, SnapshotManifest
 
-USER_AGENT = "RoFact-research/0.1 (proiect studentesc; contact: <pune-ti-emailul>)"
+USER_AGENT = "RoFact-research/0.1 (proiect studentesc; contact: <mihai.mandragiu@gmail.com>)"
 
 DEFAULT_TIMEOUT = 30
 DEFAULT_DELAY = 1.5
 
 
-# --------------------------------------------------------------------------- #
-# Snapshot                                                                     #
-# --------------------------------------------------------------------------- #
 
 def today_snapshot_id() -> str:
     return date.today().isoformat()
@@ -38,11 +37,6 @@ def snapshot_dir(snapshot_id: str) -> Path:
 
 def save_raw(snapshot_id: str, source_id: str, resource: str,
              payload: str | bytes, ext: str = "json") -> Path:
-    """Salvează răspunsul brut, exact cum a venit. Nu-l normaliza aici.
-
-    Textul brut e proba ta: dacă peste trei luni cifrele diferă, el arată ce ai
-    descărcat efectiv.
-    """
     d = snapshot_dir(snapshot_id) / source_id
     d.mkdir(parents=True, exist_ok=True)
     safe = resource.replace("/", "_").replace(":", "_")
@@ -108,14 +102,33 @@ def write_manifest(snapshot_id: str, entries: list[SnapshotEntry]) -> Path:
     return path
 
 
-def load_sources_config() -> dict[str, Any]:
-    """TODO (10 min) — încarcă configs/sources.yaml cu PyYAML și întoarce dict-ul.
+def load_sources_config(path: Path | None = None) -> dict[str, Any]:
+    """Load the source registry, `configs/sources.yaml`.
 
-    Adaugă o verificare: dacă o sursă G1/G2 are `license_status: to_verify`,
-    emite un warning la import. Sursele neverificate nu trebuie să ajungă
-    tăcut în dataset.
+    Warns when a primary source (G1/G2) still has `license_status: to_verify`:
+    an unverified source must never reach the dataset silently.
+
+    `path` exists for the tests; normal code calls it with no argument.
     """
-    raise NotImplementedError
+    path = path or io.CONFIGS / "sources.yaml"
+    try:
+        with open(path, encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+    except yaml.YAMLError as exc:
+        # A broken indent once made this file unreadable without anyone noticing.
+        raise ValueError(f"{path.name} nu e YAML valid: {exc}") from exc
+
+    for source_id, source in config["sources"].items():
+        if not isinstance(source, dict):
+            continue
+        tier = source.get("tier")
+        if tier in ("G1", "G2") and source.get("license_status") == "to_verify":
+            warnings.warn(
+                f"Sursa {source_id!r} ({tier}) are license_status: to_verify. "
+                "Nu o folosi în dataset până nu verifici licența.",
+                stacklevel=2,
+            )
+    return config
 
 
 def check_robots(base_url: str, path: str = "/") -> bool:
