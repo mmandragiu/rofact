@@ -7,9 +7,11 @@ este pasul care transformă statistica în dovadă citabilă.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from decimal import Decimal
 from typing import Iterator
 
+from rofact import io
 from rofact.schemas import Document, Passage
 
 # --------------------------------------------------------------------------- #
@@ -62,65 +64,119 @@ def segment_by_article(doc: Document) -> list[Passage]:
 # Verbalizarea tabelelor                                                       #
 # --------------------------------------------------------------------------- #
 
-TEMPLATES = {
-    "rate": [
-        "{indicator} în {teritoriu}, {an}{defalcare}: {valoare}{um}.",
-        "În {an}, {indicator} {teritoriu_prep} a fost {valoare}{um}{defalcare_prep}.",
-        "{indicator}{defalcare_prep} {teritoriu_prep}, anul {an}: {valoare}{um}.",
-    ],
-    "absolute": [
-        "{indicator} în {teritoriu}, {an}{defalcare}: {valoare} {um}.",
-        "La nivelul anului {an}, {indicator} {teritoriu_prep} a fost de {valoare} {um}{defalcare_prep}.",
-        "{an}, {teritoriu}: {indicator}{defalcare_prep} — {valoare} {um}.",
-    ],
-}
+# Three phrasings per fact. Several on purpose: if the whole official corpus used
+# one template, a dense retriever would learn to match THE TEMPLATE instead of the
+# content, and collapse on naturally worded claims — while validation still looked
+# fine, because validation uses the same templates.
+TEMPLATES = [
+    "{Indicator} în {teritoriu}, anul {an}{defalcare}: {valoare}{precizare}.",
+    "În {an}, {indicator} în {teritoriu} a fost {valoare}{defalcare}{precizare}.",
+    "{teritoriu}, {an} — {indicator}{defalcare}: {valoare}.",
+]
+
+COMPARATIVE = "{Indicator}{defalcare}, comparativ în UE, {an}: {clasament}.{medie}"
+
+# Selection policy. Verbalising all 4,504 Eurostat observations three ways would
+# give ~13,500 passages — more than the WHOLE corpus target, leaving no room for
+# the media noise the research question is about. So: full treatment for the
+# country the claims are about, one ranked passage for the rest.
+FOCUS_GEO = "RO"
+# The EU aggregate is not a country: it is reported apart from the ranking, so a
+# claim about "the highest in the EU" is not accidentally settled against an average.
+AGGREGATE_GEO = "EU27_2020"
 
 
-def verbalize_table(doc: Document, rows: list[dict], *,
-                    kind: str = "absolute") -> Iterator[Passage]:
-    """Transformă rândurile unui tabel în propoziții regăsibile.
+def _capitalize(text: str) -> str:
+    return text[:1].upper() + text[1:]
 
-    Exemplu de rezultat dorit:
-        „Rata șomajului în România, anul 2023, ambele sexe, total: 5,6%."
-        „În 2023, rata șomajului din România a fost 5,6%, pe total sexe."
 
-    TODO (90 min — cea mai importantă oră din S2):
+def _value_with_unit(valoare: float, um: str) -> str:
+    """'5,6%' · '19.067.576 persoane' · '6,1 la 1.000 de locuitori'."""
+    number = format_number_ro(valoare)
+    return f"{number}{um}" if um == "%" else f"{number} {um}"
 
-      1. Pentru fiecare rând, umple 2–3 șabloane DIFERITE din TEMPLATES[kind].
-         Setează Passage.template_id ca să poți verifica ulterior diversitatea.
 
-         De ce mai multe formulări: dacă tot corpusul G1 folosește un singur
-         șablon, retriever-ul dens învață să potrivească ȘABLONUL, nu conținutul.
-         Pe afirmații reale, formulate natural, performanța se prăbușește — și
-         nu vei înțelege de ce, pentru că pe validation totul arăta bine.
+def verbalize_facts(doc: Document, facts: list["Fact"], *,  # noqa: F821
+                    focus_geo: str = FOCUS_GEO,
+                    aggregate_geo: str = AGGREGATE_GEO,
+                    comparative: bool = True) -> Iterator[Passage]:
+    """Turn facts into searchable Romanian sentences.
 
-      2. Formatarea numerelor ÎN CONVENȚIE ROMÂNEASCĂ:
-           - separator zecimal: VIRGULĂ  -> „5,6" nu „5.6"
-           - separator de mii: punct sau spațiu -> „19.053.815" / „19 053 815"
-         Afirmațiile reale folosesc virgula. Dacă pasajele tale folosesc punctul,
-         potrivirea lexicală (BM25) pe numere eșuează sistematic — exact pe
-         categoria de claims care contează cel mai mult.
-         Generează AMBELE variante pentru numerele-cheie dacă vrei să fii sigur.
+    Two speeds, because the corpus has a budget:
 
-      3. Include unitatea explicit: „%", „persoane", „lei", „milioane lei",
-         „puncte procentuale". Fără unitate, claims-urile de tip `unit_swap` și
-         `absolute_vs_percent` nu pot fi dovedite.
+    - the focus country (Romania) gets all three phrasings per fact;
+    - every other country is folded into ONE ranked passage per indicator and
+      year — which is also the only shape that can settle a claim like "the
+      lowest in the EU", since that needs the whole ranking in one place.
 
-      4. Include marca temporală în TEXT, nu doar în metadate. Retriever-ul
-         caută în text; un pasaj fără an nu poate fi distins de același
-         indicator din alt an — și `year_shift` e cea mai frecventă perturbare
-         din dataset.
-
-      5. Filtrează celulele irelevante. POP105A are ~1.2M celule. Nu le
-         verbaliza pe toate: alege agregatele (Total/Total/TOTAL) plus
-         defalcările pe care le folosești efectiv în claims. Corpusul țintă e
-         10–13k pasaje în total, nu un milion.
-
-      6. is_verbalized=True pe toate pasajele generate aici. Ai nevoie de
-         distincție în data card și în analiza de erori din S10 (pasajele
-         verbalizate se comportă altfel decât textul natural).
+    Both knobs are arguments, not hard-coded: a different policy is a different
+    call, not a rewrite.
     """
-    raise NotImplementedError
+    for fact in facts:
+        if fact.geo_code != focus_geo:
+            continue
+        pieces = dict(
+            indicator=fact.indicator,
+            Indicator=_capitalize(fact.indicator),
+            teritoriu=fact.teritoriu,
+            an=fact.an,
+            defalcare=f", {fact.defalcare}" if fact.defalcare else "",
+            valoare=_value_with_unit(fact.valoare, fact.um),
+            precizare=f" ({fact.precizare})" if fact.precizare else "",
+        )
+        for i, template in enumerate(TEMPLATES, start=1):
+            text = template.format(**pieces)
+            yield Passage(
+                passage_id=io.stable_id("p", doc.document_id,
+                                        str(fact.char_start), f"t{i}"),
+                document_id=doc.document_id,
+                text=text,
+                char_start=fact.char_start,
+                char_end=fact.char_end,
+                section=f"{fact.indicator}, {fact.an}",
+                is_verbalized=True,
+                template_id=f"t{i}",
+            )
+
+    if not comparative:
+        return
+
+    groups: dict[tuple, list] = defaultdict(list)
+    for fact in facts:
+        groups[fact.group].append(fact)
+
+    for group, members in groups.items():
+        if len(members) < 2:
+            continue
+        tari = sorted((f for f in members if f.geo_code != aggregate_geo),
+                      key=lambda f: f.valoare, reverse=True)
+        agregat = next((f for f in members if f.geo_code == aggregate_geo), None)
+        if not tari:
+            continue
+        head = tari[0]
+        clasament = ", ".join(
+            f"{f.teritoriu} {_value_with_unit(f.valoare, f.um)}" for f in tari)
+        medie = (f" Media UE-27: {_value_with_unit(agregat.valoare, agregat.um)}."
+                 if agregat else "")
+        text = COMPARATIVE.format(
+            Indicator=_capitalize(head.indicator),
+            medie=medie,
+            defalcare=f", {head.defalcare}" if head.defalcare else "",
+            an=head.an,
+            clasament=clasament,
+        )
+        # A comparison spans rows scattered through the table (it is sorted by
+        # dimension, not by group), so the offsets cover the whole region.
+        yield Passage(
+            passage_id=io.stable_id("p", doc.document_id, "cmp", *map(str, group)),
+            document_id=doc.document_id,
+            text=text,
+            char_start=min(f.char_start for f in members),
+            char_end=max(f.char_end for f in members),
+            section=f"{head.indicator}, {head.an} — comparativ UE",
+            is_verbalized=True,
+            template_id="cmp",
+        )
 
 
 def format_number_ro(value: float, *, decimals: int | None = None) -> str:
@@ -148,12 +204,22 @@ def format_number_ro(value: float, *, decimals: int | None = None) -> str:
 
 
 def build_passages(documents: list[Document]) -> list[Passage]:
-    """TODO (20 min) — dispecer: alege strategia de segmentare după source_type.
+    """Dispatcher: pick a segmentation strategy per source type.
 
-        official_statistics  -> verbalize_table
-        law                  -> segment_by_article
-        orice altceva        -> segment_document
-
-    Apoi scrie rezultatul cu io.write_jsonl(io.PASSAGES_PATH, passages).
+        official_statistics  -> verbalise the table
+        law                  -> split by article          (S3)
+        anything else        -> sliding window            (S3, media and PDFs)
     """
-    raise NotImplementedError
+    from rofact.ingest.eurostat import DATA_BROWSER, to_facts
+
+    passages: list[Passage] = []
+    for doc in documents:
+        if doc.source_type == "official_statistics":
+            dataset = doc.source_url.removeprefix(
+                DATA_BROWSER.split("{")[0]).split("/")[0]
+            passages += verbalize_facts(doc, to_facts(doc, dataset))
+        elif doc.source_type == "law":
+            passages += segment_by_article(doc)
+        else:
+            passages += segment_document(doc)
+    return passages

@@ -202,6 +202,121 @@ def rows_from_document(doc: Document) -> list[dict[str, str]]:
     return rows
 
 
+# --------------------------------------------------------------------------- #
+# Facts: rows turned into Romanian-ready pieces                                #
+# --------------------------------------------------------------------------- #
+
+class Fact(NamedTuple):
+    """One observation, with every piece already phrased in Romanian.
+
+    This is the hand-over point between the two concerns: `eurostat.py` knows what
+    the codes mean, `passages.py` knows how to build a Romanian sentence. Neither
+    needs to learn the other's job.
+    """
+
+    indicator: str      # "rata șomajului"
+    teritoriu: str      # "România"
+    geo_code: str       # "RO"
+    an: str             # "2023"
+    defalcare: str      # "în rândul persoanelor de 15–74 de ani", or ""
+    valoare: float      # 5.6
+    um: str             # "%", "persoane", "milioane de euro", "la 1.000 de locuitori"
+    precizare: str      # "din populația activă", or ""
+    flag: str           # Eurostat flag, or ""
+    group: tuple        # identical for every country of one comparison
+    char_start: int     # where the source row sits in Document.text
+    char_end: int
+
+
+# How to phrase each dataset. `indicator_by` means the indicator's name depends on
+# a dimension's code (GDP in euro vs GDP growth are different indicators, not the
+# same one in different units).
+VERBALIZATION: dict[str, dict[str, Any]] = {
+    "une_rt_a": dict(
+        indicator="rata șomajului",
+        unit=("%", "din populația activă"),
+        breakdown="age",
+    ),
+    "prc_hicp_aind": dict(
+        indicator="rata anuală a inflației (IAPC)",
+        unit=("%", ""),
+    ),
+    "nama_10_gdp": dict(
+        indicator_by="unit",
+        indicator_map={"CP_MEUR": "produsul intern brut",
+                       "CLV_PCH_PRE": "creșterea reală a produsului intern brut"},
+        unit_map={"CP_MEUR": ("milioane de euro", "prețuri curente"),
+                  "CLV_PCH_PRE": ("%", "față de anul precedent")},
+    ),
+    "demo_gind": dict(
+        indicator_by="indic_de",
+        indicator_map={"JAN": "populația la 1 ianuarie",
+                       "GBIRTHRT": "rata brută a natalității",
+                       "GDEATHRT": "rata brută a mortalității",
+                       "NATGROWRT": "rata sporului natural"},
+        unit_map={"JAN": ("persoane", ""),
+                  "GBIRTHRT": ("la 1.000 de locuitori", ""),
+                  "GDEATHRT": ("la 1.000 de locuitori", ""),
+                  "NATGROWRT": ("la 1.000 de locuitori", "")},
+    ),
+    "ilc_li02": dict(
+        indicator="rata riscului de sărăcie",
+        unit=("%", "prag de 60% din venitul median echivalent"),
+    ),
+}
+
+BREAKDOWN_RO = {
+    "age": {"Y15-74": "în rândul persoanelor de 15–74 de ani",
+            "Y15-24": "în rândul tinerilor de 15–24 de ani",
+            "TOTAL": ""},
+    "sex": {"T": "", "M": "în rândul bărbaților", "F": "în rândul femeilor"},
+}
+
+
+def to_facts(doc: Document, dataset: str) -> list[Fact]:
+    """Turn a Eurostat document's rows into Romanian-ready facts.
+
+    Character offsets are tracked while walking the text, so every passage built
+    later can point back to the exact line it came from.
+    """
+    spec = VERBALIZATION[dataset]
+    lines = doc.text.split("\n")
+    columns = lines[0].split("\t")
+    offset = len(lines[0]) + 1          # skip the header line
+
+    facts: list[Fact] = []
+    for line in lines[1:]:
+        start, offset = offset, offset + len(line) + 1
+        row = dict(zip(columns, line.split("\t")))
+
+        if "indicator_by" in spec:
+            key = row[spec["indicator_by"]]
+            indicator = spec["indicator_map"][key]
+            um, precizare = spec["unit_map"][key]
+        else:
+            indicator = spec["indicator"]
+            um, precizare = spec["unit"]
+
+        dim = spec.get("breakdown")
+        defalcare = BREAKDOWN_RO[dim][row[dim]] if dim else ""
+
+        facts.append(Fact(
+            indicator=indicator,
+            teritoriu=LABELS_RO["geo"].get(row["geo"], row["geo"]),
+            geo_code=row["geo"],
+            an=row["time"],
+            defalcare=defalcare,
+            valoare=float(row["value"]),
+            um=um,
+            precizare=precizare,
+            flag=row.get("flag", ""),
+            group=(dataset, indicator, defalcare, row["time"]),
+            char_start=start,
+            char_end=start + len(line),
+        ))
+    return facts
+
+
 def ingest(snapshot_id: str) -> tuple[list[Document], list[SnapshotEntry]]:
     """Download every dataset in STARTER_DATASETS; one Document per dataset."""
     documents: list[Document] = []
