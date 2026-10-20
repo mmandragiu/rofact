@@ -1,35 +1,74 @@
-"""CLI de construire a corpusului: ingest -> documente -> pasaje.
+"""Build the corpus: ingest -> documents -> passages.
 
-    python scripts/build_corpus.py --sources eurostat ins_tempo
-    python scripts/build_corpus.py --sources all --snapshot 2026-07-21
-    python scripts/build_corpus.py --segment-only        # re-segmentează fără re-descărcare
+    python scripts/build_corpus.py --sources eurostat
+    python scripts/build_corpus.py --sources all --snapshot 2026-10-20
+    python scripts/build_corpus.py --segment-only     # re-segment, no downloading
 
-Separarea „ingest" / „segment" e intenționată: vei schimba strategia de
-segmentare de câteva ori în S2–S4, iar re-descărcarea de fiecare dată e lentă,
-nepoliticoasă față de surse și îți schimbă snapshotul fără motiv.
+Splitting "ingest" from "segment" is deliberate: the segmentation strategy will
+change several times during S2-S4, and re-downloading each time is slow, rude to
+the sources, and silently changes the snapshot for no reason.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rofact import io
 from rofact.ingest import base
+from rofact.passages import build_passages
+from rofact.schemas import Document, Passage, SnapshotEntry
 
 SOURCES = ["eurostat", "ins_tempo", "datagov", "legislatie", "pdf_docs", "media"]
 
+# Sources that are not automated are listed here so the script says WHY instead of
+# failing with an import error. Reasons come from docs/source_registry.md.
+NOT_AUTOMATED = {
+    "ins_tempo": "INS a confirmat în scris (2026-08-04): descărcare DOAR MANUALĂ. "
+                 "Exporturile se pun în data/raw/ins_tempo/ și se parsează de acolo (S3).",
+    "datagov": "CKAN dă doar metadate; datele sunt XLSX/PDF, câte un layout per "
+               "instituție. Decizie de luat la S3 (vezi source_registry.md).",
+    "legislatie": "API SOAP oficial, de implementat la S3 "
+                  "(http://legislatie.just.ro/apiws/FreeWebService.svc/SOAP).",
+    "pdf_docs": "Rapoarte BNR / Ministerul Finanțelor, de implementat la S3.",
+    "media": "Corpusul de presă, S4.",
+}
 
-def run_ingest(source: str, snapshot_id: str):
-    """TODO (30 min) — dispecer către modulul de ingest potrivit.
 
-    Fiecare ramură întoarce (list[Document], list[SnapshotEntry]).
-    Ține-le într-un acumulator; scrii o singură dată la final.
-    """
-    raise NotImplementedError
+def run_ingest(source: str, snapshot_id: str) -> tuple[list[Document], list[SnapshotEntry]]:
+    """Dispatch to the right ingest module."""
+    if source == "eurostat":
+        from rofact.ingest import eurostat
+        return eurostat.ingest(snapshot_id)
+
+    if source in NOT_AUTOMATED:
+        raise NotImplementedError(f"{source}: {NOT_AUTOMATED[source]}")
+    raise ValueError(f"sursă necunoscută: {source}")
+
+
+def summarize(documents: list[Document], passages: list[Passage]) -> str:
+    """What the corpus looks like now — the numbers that go into the data card."""
+    by_doc = {d.document_id: d for d in documents}
+    lines = [
+        f"documente: {len(documents)}",
+        f"  pe tier:        {dict(Counter(d.source_tier.value for d in documents))}",
+        f"  pe source_type: {dict(Counter(d.source_type for d in documents))}",
+        f"pasaje: {len(passages)}",
+        f"  verbalizate:    {sum(p.is_verbalized for p in passages)}",
+        f"  pe șablon:      {dict(Counter(p.template_id or '—' for p in passages))}",
+    ]
+    # Target: 10-13k passages, of which only 20-30% official. The rest must be
+    # media, or the noise experiment has nothing to measure.
+    official = sum(by_doc[p.document_id].source_tier.value in ("G1", "G2")
+                   for p in passages if p.document_id in by_doc)
+    if passages:
+        lines.append(f"  din care G1/G2: {official} ({official / len(passages):.0%}) "
+                     f"— țintă finală 20–30% din 10.000–13.000")
+    return "\n".join(lines)
 
 
 def main() -> int:
@@ -46,20 +85,62 @@ def main() -> int:
     snapshot_id = args.snapshot or base.today_snapshot_id()
     sources = SOURCES if "all" in args.sources else args.sources
 
-    print(f"snapshot: {snapshot_id}")
-    print(f"surse:    {', '.join(sources)}")
+    if args.segment_only:
+        print("re-segmentez din documents.jsonl, fără descărcare")
+    else:
+        print(f"snapshot: {snapshot_id}")
+        print(f"surse:    {', '.join(sources)}\n")
 
-    # TODO (40 min):
-    #   1. dacă nu --segment-only: pentru fiecare sursă, run_ingest(...);
-    #      acumulează documente + entries
-    #   2. io.write_jsonl(io.DOCUMENTS_PATH, documents)
-    #   3. base.write_manifest(snapshot_id, entries)
-    #   4. documents = io.read_jsonl(io.DOCUMENTS_PATH, Document)
-    #   5. passages = passages.build_passages(documents)
-    #   6. io.write_jsonl(io.PASSAGES_PATH, passages)
-    #   7. afișează sumarul: documente/pasaje pe tier și pe source_type
-    #   8. rulează validate_data la final (import, nu subprocess)
-    raise NotImplementedError
+        documents: list[Document] = []
+        entries: list[SnapshotEntry] = []
+        for source in sources:
+            try:
+                docs, source_entries = run_ingest(source, snapshot_id)
+            except NotImplementedError as exc:
+                print(f"  — {exc}")
+                continue
+            print(f"  ✓ {source}: {len(docs)} documente, "
+                  f"{sum(e.n_records or 0 for e in source_entries)} înregistrări")
+            documents += docs
+            entries += source_entries
+
+        if not documents:
+            print("\nNiciun document descărcat. Nu suprascriu documents.jsonl.")
+            return 1
+
+        io.write_jsonl(io.DOCUMENTS_PATH, documents)
+        manifest = base.write_manifest(snapshot_id, entries)
+        print(f"\nscris {io.DOCUMENTS_PATH.name} și {manifest.name}")
+
+    # Read the documents back through the schema, so segmentation always runs on
+    # validated data — the same path a later session would take.
+    documents = io.read_jsonl(io.DOCUMENTS_PATH, Document)
+    if not documents:
+        print(f"{io.DOCUMENTS_PATH} e gol — rulează întâi fără --segment-only.")
+        return 1
+
+    passages = build_passages(documents)
+    io.write_jsonl(io.PASSAGES_PATH, passages)
+    print(f"scris {io.PASSAGES_PATH.name}\n")
+    print(summarize(documents, passages))
+
+    # The validator runs on every build, not only after annotating: a corpus that
+    # breaks an invariant should be caught before anything is annotated on top of it.
+    print("\n" + "-" * 72)
+    import validate_data
+
+    dataset = validate_data.Dataset.load()
+    issues = []
+    for _name, check in validate_data.CHECKS:
+        try:
+            issues += check(dataset)
+        except NotImplementedError:
+            continue
+    errors = [i for i in issues if i.severity == "error"]
+    for issue in issues[:20]:
+        print(issue)
+    print(f"validator: {len(errors)} erori, {len(issues) - len(errors)} avertismente")
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":
