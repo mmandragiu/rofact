@@ -26,6 +26,7 @@ from typing import Any, Iterator, NamedTuple
 
 from rofact import io
 from rofact.ingest.base import load_sources_config, make_entry, polite_get, save_raw
+from rofact.passages import Fact
 from rofact.schemas import Document, SnapshotEntry, SourceTier
 
 API_BASE = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data"
@@ -205,28 +206,6 @@ def rows_from_document(doc: Document) -> list[dict[str, str]]:
 # --------------------------------------------------------------------------- #
 # Facts: rows turned into Romanian-ready pieces                                #
 # --------------------------------------------------------------------------- #
-
-class Fact(NamedTuple):
-    """One observation, with every piece already phrased in Romanian.
-
-    This is the hand-over point between the two concerns: `eurostat.py` knows what
-    the codes mean, `passages.py` knows how to build a Romanian sentence. Neither
-    needs to learn the other's job.
-    """
-
-    indicator: str      # "rata șomajului"
-    teritoriu: str      # "România"
-    geo_code: str       # "RO"
-    an: str             # "2023"
-    defalcare: str      # "în rândul persoanelor de 15–74 de ani", or ""
-    valoare: float      # 5.6
-    um: str             # "%", "persoane", "milioane de euro", "la 1.000 de locuitori"
-    precizare: str      # "din populația activă", or ""
-    flag: str           # Eurostat flag, or ""
-    group: tuple        # identical for every country of one comparison
-    char_start: int     # where the source row sits in Document.text
-    char_end: int
-
 
 # How to phrase each dataset. `indicator_by` means the indicator's name depends on
 # a dimension's code (GDP in euro vs GDP growth are different indicators, not the

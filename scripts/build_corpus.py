@@ -28,8 +28,6 @@ SOURCES = ["eurostat", "ins_tempo", "datagov", "legislatie", "pdf_docs", "media"
 # Sources that are not automated are listed here so the script says WHY instead of
 # failing with an import error. Reasons come from docs/source_registry.md.
 NOT_AUTOMATED = {
-    "ins_tempo": "INS a confirmat în scris (2026-08-04): descărcare DOAR MANUALĂ. "
-                 "Exporturile se pun în data/raw/ins_tempo/ și se parsează de acolo (S3).",
     "datagov": "CKAN dă doar metadate; datele sunt XLSX/PDF, câte un layout per "
                "instituție. Decizie de luat la S3 (vezi source_registry.md).",
     "pdf_docs": "Rapoarte BNR / Ministerul Finanțelor, de implementat la S3.",
@@ -42,6 +40,10 @@ def run_ingest(source: str, snapshot_id: str) -> tuple[list[Document], list[Snap
     if source == "eurostat":
         from rofact.ingest import eurostat
         return eurostat.ingest(snapshot_id)
+
+    if source == "ins_tempo":
+        from rofact.ingest import ins_tempo
+        return ins_tempo.ingest(snapshot_id)
 
     if source == "legislatie":
         from rofact.ingest import legislatie

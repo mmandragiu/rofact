@@ -169,3 +169,96 @@ def test_rows_from_document_adds_romanian_labels():
     assert ro_2023["value"] == "5.4"
     bg_2023 = next(r for r in rows if r["geo"] == "BG" and r["time"] == "2023")
     assert bg_2023["flag"] == "p"
+
+
+# --------------------------------------------------------------------------- #
+# INS TEMPO — manual exports                                                   #
+# --------------------------------------------------------------------------- #
+
+EXPORT = (
+    "Varste si grupe de varsta, Sexe, Medii de rezidenta, "
+    "Macroregiuni  regiuni de dezvoltare si judete, Ani, UM: Numar persoane, Valoare\n"
+    "Total, Total, Total, TOTAL, Anul 2024, Numar persoane, 19068290\n"
+    "Total, Masculin, Urban, TOTAL, Anul 2024, Numar persoane, 4500000\n"
+    "Total, Total, Total, Cluj, Anul 2024, Numar persoane, 700000\n"
+    "Total, Total, Total, TOTAL, Anul 2025, Numar persoane, :\n"
+)
+
+
+def _export(tmp_path):
+    path = tmp_path / "exportPivot_POP105A.csv"
+    path.write_text(EXPORT, encoding="utf-8")
+    return path
+
+
+def test_matrix_code_comes_from_the_filename(tmp_path):
+    from rofact.ingest.ins_tempo import matrix_from_filename
+    assert matrix_from_filename(_export(tmp_path)) == "POP105A"
+
+
+def test_export_is_parsed(tmp_path):
+    from rofact.ingest.ins_tempo import parse_export
+    rows = parse_export(_export(tmp_path))
+    assert len(rows) == 4
+    assert rows[0]["Valoare"] == "19068290"
+    assert rows[0]["__an__"] == "2024"
+
+
+def test_wrong_export_format_says_so(tmp_path):
+    """TEMPO offers several layouts; a helpful error beats a cryptic KeyError."""
+    from rofact.ingest.ins_tempo import read_export
+    path = tmp_path / "exportPivot_POP105A.csv"
+    path.write_text("Ani, Altceva\nAnul 2024, 5\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Valoare"):
+        read_export(path)
+
+
+def test_facts_drop_total_breakdowns_and_name_the_country(tmp_path):
+    """Nobody says "the resident population, total ages, total sexes"."""
+    from rofact.ingest.ins_tempo import export_to_document, to_facts
+    doc = export_to_document(_export(tmp_path), "2026-10-23", "test")
+    facts = {(f.teritoriu, f.defalcare): f for f in to_facts(doc, "POP105A")}
+
+    national = facts[("România", "")]
+    assert national.valoare == 19068290
+    assert national.um == "persoane"
+    assert national.an == "2024"
+
+    # Non-total breakdowns are kept, and translated: TEMPO has no diacritics.
+    assert ("România", "bărbați, mediul urban") in facts
+    # A county is a territory, not a breakdown.
+    assert ("Cluj", "") in facts
+
+
+def test_missing_observations_are_skipped(tmp_path):
+    """INS marks an unavailable value with ':' — it is not a zero."""
+    from rofact.ingest.ins_tempo import export_to_document, to_facts
+    doc = export_to_document(_export(tmp_path), "2026-10-23", "test")
+    assert all(f.an != "2025" for f in to_facts(doc, "POP105A"))
+
+
+def test_ins_passages_reuse_the_same_verbalisation(tmp_path):
+    """The verbalisation written for Eurostat works unchanged for INS: that is
+    what moving `Fact` out of the Eurostat module bought."""
+    from rofact.ingest.ins_tempo import export_to_document, to_facts
+    from rofact.passages import verbalize_facts
+    doc = export_to_document(_export(tmp_path), "2026-10-23", "test")
+    texts = [p.text for p in verbalize_facts(doc, to_facts(doc, "POP105A"))]
+    assert any("19.068.290 persoane" in t for t in texts)      # Romanian thousands
+    assert any("2024" in t for t in texts)
+
+
+def test_document_hash_is_stable_against_row_order(tmp_path):
+    """Re-exporting the same matrix must give the same hash, whatever order TEMPO
+    happens to list the rows in — otherwise the snapshot changes for no reason."""
+    from rofact.ingest.ins_tempo import export_to_document
+
+    header, *rows = EXPORT.strip().split("\n")
+    original = tmp_path / "original" / "exportPivot_POP105A.csv"
+    reordered = tmp_path / "reordered" / "exportPivot_POP105A.csv"
+    for path, body in [(original, rows), (reordered, list(reversed(rows)))]:
+        path.parent.mkdir()
+        path.write_text("\n".join([header, *body]) + "\n", encoding="utf-8")
+
+    assert (export_to_document(original, "s", "t").content_hash
+            == export_to_document(reordered, "s", "t").content_hash)

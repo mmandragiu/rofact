@@ -1,189 +1,271 @@
-"""Ingest INS TEMPO Online.
+"""INS TEMPO Online ingest — parser for MANUAL exports.
 
-API JSON nedocumentat public, pe port 8077, HTTP simplu. Confirmat funcțional
-în 2026-07:
+Not an API client, by instruction. INS answered a written request on 2026-08-04:
 
-    GET  {BASE}/context/{code}          -> arborele tematic
-    GET  {BASE}/matrix/{matrix}         -> metadate + dimensiuni + definiție
-    POST {BASE}/matrix/dataSet/{matrix} -> datele  (payload DE VERIFICAT)
+    (1) reuse needs no prior agreement, only attribution;
+    (2) redistributing the data together with the definitions and methodological
+        notes is allowed, with the source named;
+    (3) data in TEMPO Online may be downloaded ONLY MANUALLY.
 
-Structura răspunsului /matrix/{cod} (ex. POP105A):
+So the undocumented API on port 8077 is not used. The flow is:
 
-    {
-      "matrixName": "Populatia rezidenta la 1 ianuarie pe grupe de varsta...",
-      "ancestors": [...],
-      "definitie": "Populatia rezidenta reprezinta totalitatea persoanelor...",
-      "metodologie": "Sursa datelor o constituie cercetarea statistica...",
-      "observatii": "Datele sunt disponibile incepand cu anul 2003...",
-      "ultimaActualizare": "08-01-2026",
-      "periodicitati": ["Anuala"],
-      "dimensionsMap": [
-        {"dimCode": 1, "label": "Varste si grupe de varsta",
-         "options": [{"label": "Total", "nomItemId": 1, "offset": 1}, ...]},
-        {"dimCode": 2, "label": "Sexe", "options": [...]},
-        ...
-      ]
-    }
+    you            -> select a matrix in https://statistici.insse.ro/tempoins/,
+                      keep the breakdown small, export CSV
+                   -> save it under data/raw/ins_tempo/
+    this module    -> parse, hash, build Documents
 
-ATENȚIE: textele TEMPO vin FĂRĂ DIACRITICE ("Populatia rezidenta"). Aplică o
-normalizare consecventă înainte de indexare, altfel BM25 nu va potrivi
-"populația" din afirmație cu "populatia" din pasaj. Vezi TODO-ul de la finalul
-fișierului — e o problemă reală, nu una teoretică.
+Export format, checked on a real POP105A file (2026-10-23):
+
+    Varste si grupe de varsta, Sexe, Medii de rezidenta, Macroregiuni  regiuni
+    de dezvoltare si judete, Ani, UM: Numar persoane, Valoare
+    Total, Total, Total, TOTAL, Anul 2024, Numar persoane, 19068290
+
+- separator is ", " (comma AND space); commas inside a dimension name are
+  replaced by a space in the header, which is why "Macroregiuni  regiuni" has a
+  double space;
+- years arrive as "Anul 2024";
+- the unit is in the column NAME ("UM: Numar persoane"), not only in the cells;
+- the text carries NO DIACRITICS ("Varste si grupe de varsta"), exactly like the
+  API did. Romanian labels are ours to add — see LABELS_RO.
+
+Attribution required (configs/sources.yaml):
+    Sursa: INS România, {matrix_name}, {year}, www.insse.ro
 """
 
 from __future__ import annotations
 
+import csv
+import re
 from datetime import date
-from typing import Any, NamedTuple
+from pathlib import Path
+from typing import Any
 
-from rofact.schemas import Document, SnapshotEntry
+from rofact import io
+from rofact.ingest.base import make_entry
+from rofact.passages import Fact
+from rofact.schemas import Document, SnapshotEntry, SourceTier
 
-BASE = "http://statistici.insse.ro:8077/tempo-ins"
+EXPORT_DIR = io.RAW / "ins_tempo"
+TEMPO_URL = "https://statistici.insse.ro/tempoins/index.jsp?page=tables&matrix={matrix}"
 
-TREE_URL = BASE + "/context/{code}"
-MATRIX_META_URL = BASE + "/matrix/{matrix}"
-MATRIX_DATA_URL = BASE + "/matrix/dataSet/{matrix}"
-
-
-class Dimension(NamedTuple):
-    dim_code: int
-    label: str
-    options: list[dict[str, Any]]   # {"label", "nomItemId", "offset"}
+YEAR = re.compile(r"Anul\s+(\d{4})")
+TOTALS = {"total", "totale"}
 
 
 # --------------------------------------------------------------------------- #
-# Navigare și metadate                                                         #
+# Parsing                                                                      #
 # --------------------------------------------------------------------------- #
 
-def fetch_tree(code: str = "") -> dict:
-    """TODO (20 min) — GET pe TREE_URL, întoarce nodul cu `children`.
+def matrix_from_filename(path: Path) -> str:
+    """'exportPivot_POP105A.csv' -> 'POP105A'."""
+    stem = path.stem
+    match = re.search(r"([A-Z]{3}\d+[A-Z]?)", stem.upper())
+    return match.group(1) if match else stem.upper()
 
-    Punctele de intrare relevante pentru proiect:
-        "1"  -> A. STATISTICA SOCIALA
-                 "10" populație și structură demografică
-                 "11" mișcarea naturală a populației
-                 "12" mișcarea migratorie
-                 "15" forța de muncă        <- șomaj, ocupare
-                 "20" venituri și condiții de viață
-        "2"  -> B. STATISTICA ECONOMICA (verifică denumirea exactă)
 
-    Sugestie: scrie și un `walk_tree(code)` recursiv care listează toate
-    matricile dintr-un capitol. Îl rulezi o dată, salvezi rezultatul în
-    configs/, și nu mai navighezi la fiecare ingest.
+def read_export(path: Path) -> tuple[list[str], list[list[str]]]:
+    """Read one manual export. Returns (header, rows), both whitespace-trimmed."""
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        rows = [[cell.strip() for cell in row]
+                for row in csv.reader(f) if any(cell.strip() for cell in row)]
+    if not rows:
+        raise ValueError(f"{path.name}: fișier gol")
+    header, *data = rows
+    if header[-1].lower() != "valoare":
+        raise ValueError(
+            f"{path.name}: ultima coloană ar trebui să fie 'Valoare', dar e "
+            f"{header[-1]!r}. Ai exportat formatul Pivot din TEMPO?"
+        )
+    return header, data
+
+
+def _parse_value(cell: str) -> float | None:
+    """INS writes plain integers; ':' and '-' mark a missing observation."""
+    cell = cell.replace(" ", "").replace(".", "")
+    if cell in {"", ":", "-", "*"}:
+        return None
+    try:
+        return float(cell.replace(",", "."))
+    except ValueError:
+        return None
+
+
+def parse_export(path: Path) -> list[dict[str, str]]:
+    """Turn an export into rows keyed by column name, with the year isolated."""
+    header, data = read_export(path)
+    parsed = []
+    for row in data:
+        record = dict(zip(header, row))
+        for column, value in list(record.items()):
+            year = YEAR.fullmatch(value)
+            if year:
+                record["__an__"] = year.group(1)
+                record["__col_an__"] = column
+        parsed.append(record)
+    return parsed
+
+
+# --------------------------------------------------------------------------- #
+# Documents                                                                    #
+# --------------------------------------------------------------------------- #
+
+def export_to_document(path: Path, snapshot_id: str, license: str) -> Document:
+    """One Document per exported matrix.
+
+    Like Eurostat, the document's text is the table itself — codes and raw values,
+    kept faithful to the source. Romanian labels are added later, when rows are
+    read back into Facts, so fixing a label never changes the content hash.
     """
-    raise NotImplementedError
+    matrix = matrix_from_filename(path)
+    spec = MATRICES.get(matrix, {})
+    header, data = read_export(path)
+    text = "\n".join("\t".join(row) for row in [header, *sorted(data)])
+
+    return Document(
+        document_id=io.stable_id("ins", matrix, snapshot_id),
+        source_url=TEMPO_URL.format(matrix=matrix),
+        title=spec.get("label", f"INS TEMPO {matrix}"),
+        source_type="official_statistics",
+        source_tier=SourceTier.G1,
+        domain="insse.ro",
+        published_at=None,          # TEMPO exports carry no release date
+        retrieved_at=date.fromtimestamp(path.stat().st_mtime),
+        snapshot_id=snapshot_id,
+        content_hash=io.sha256_text(text),
+        license=license,
+        text=text,
+    )
 
 
-def fetch_matrix_meta(matrix: str, snapshot_id: str) -> tuple[dict, SnapshotEntry]:
-    """TODO (30 min) — GET pe MATRIX_META_URL, salvează brut, întoarce (json, entry)."""
-    raise NotImplementedError
+def to_facts(doc: Document, matrix: str) -> list[Fact]:
+    """Turn an INS table into Romanian-ready facts.
 
-
-def parse_dimensions(meta: dict) -> list[Dimension]:
-    """TODO (15 min) — extrage `dimensionsMap` în listă de Dimension.
-
-    Observație utilă: ultima dimensiune e de obicei unitatea de măsură
-    ("UM: Numar persoane"), iar penultima e timpul ("Ani"). Nu presupune
-    pozițiile — caută după `label`.
+    Dimension handling is generic rather than per-matrix: every column other than
+    the year, the unit and the value is a breakdown, and breakdowns whose value is
+    "Total" are dropped — nobody says "the resident population, total ages, total
+    sexes", they just say "the resident population".
     """
-    raise NotImplementedError
+    spec = MATRICES.get(matrix, {})
+    lines = doc.text.split("\n")
+    header = lines[0].split("\t")
+    offset = len(lines[0]) + 1
+
+    unit_column = next((c for c in header if c.lower().startswith("um")), None)
+    year_column = next((c for c in header if c.strip().lower() == "ani"), None)
+    territory_column = next((c for c in header if "judete" in c.lower()
+                             or "macroregiuni" in c.lower()), None)
+
+    facts: list[Fact] = []
+    for line in lines[1:]:
+        start, offset = offset, offset + len(line) + 1
+        row = dict(zip(header, line.split("\t")))
+
+        value = _parse_value(row.get("Valoare", ""))
+        if value is None:
+            continue
+        year_match = YEAR.search(row.get(year_column, "")) if year_column else None
+        if not year_match:
+            continue
+        an = year_match.group(1)
+
+        teritoriu_raw = row.get(territory_column, "TOTAL") if territory_column else "TOTAL"
+        teritoriu = ("România" if teritoriu_raw.strip().lower() in TOTALS
+                     else label_ro(teritoriu_raw))
+
+        breakdown = [
+            label_ro(row[column])
+            for column in header
+            if column not in (unit_column, year_column, territory_column, "Valoare")
+            and row.get(column, "").strip().lower() not in TOTALS
+            and row.get(column, "").strip()
+        ]
+        defalcare = ", ".join(b for b in breakdown if b)
+
+        indicator = spec.get("indicator", f"indicatorul {matrix}")
+        facts.append(Fact(
+            indicator=indicator,
+            teritoriu=teritoriu,
+            geo_code="RO" if teritoriu == "România" else teritoriu_raw,
+            an=an,
+            defalcare=defalcare,
+            valoare=value,
+            um=spec.get("um") or _unit_from_column(unit_column),
+            precizare=spec.get("precizare", ""),
+            flag="",
+            group=(matrix, indicator, defalcare, an),
+            char_start=start,
+            char_end=start + len(line),
+        ))
+    return facts
+
+
+def _unit_from_column(column: str | None) -> str:
+    """'UM: Numar persoane' -> 'persoane'."""
+    if not column:
+        return ""
+    unit = column.split(":", 1)[-1].strip().lower()
+    return {"numar persoane": "persoane", "procente": "%", "numar": ""}.get(unit, unit)
+
+
+def ingest(snapshot_id: str) -> tuple[list[Document], list[SnapshotEntry]]:
+    """Parse every manual export found in data/raw/ins_tempo/."""
+    from rofact.ingest.base import load_sources_config
+
+    license = load_sources_config()["sources"]["ins_tempo"]["license"]
+    exports = sorted(EXPORT_DIR.glob("*.csv"))
+    if not exports:
+        raise NotImplementedError(
+            f"ins_tempo: niciun export în {EXPORT_DIR}. Datele TEMPO se descarcă "
+            "MANUAL (confirmat de INS, 2026-08-04): exportă CSV din "
+            "https://statistici.insse.ro/tempoins/ și pune fișierele acolo."
+        )
+
+    documents, entries = [], []
+    for path in exports:
+        matrix = matrix_from_filename(path)
+        document = export_to_document(path, snapshot_id, license)
+        documents.append(document)
+        entries.append(make_entry("ins_tempo", matrix, document.source_url, path,
+                                  n_records=len(parse_export(path)),
+                                  notes="export manual din interfața TEMPO"))
+    return documents, entries
 
 
 # --------------------------------------------------------------------------- #
-# Date                                                                         #
+# What the matrices mean                                                       #
 # --------------------------------------------------------------------------- #
+#
+# Extend as you export more matrices. A matrix with no entry still works — it
+# falls back to "indicatorul <COD>" — but the passages read badly, so add it.
 
-def fetch_matrix_data(matrix: str, selection: dict[int, list[int]],
-                      snapshot_id: str) -> tuple[dict, SnapshotEntry]:
-    """Cere datele pentru o selecție de nomItemId per dimensiune.
-
-    !!! PASUL 1, ÎNAINTE DE A SCRIE COD !!!
-
-    Formatul exact al payload-ului POST nu e documentat și se schimbă ocazional.
-    Procedura:
-      1. deschide https://statistici.insse.ro/tempoins/ în browser;
-      2. alege matricea POP105A, selectează o defalcare MICĂ
-         (Total / Total / Total / TOTAL / toți anii / Număr persoane);
-      3. DevTools -> Network -> apasă butonul de vizualizare;
-      4. copiază Request Payload-ul real;
-      5. lipește-l aici, în docstring, cu data la care l-ai verificat;
-      6. abia apoi scrie funcția.
-
-    Payload verificat la {DATA}:
-        TODO: lipește-l aici
-
-    REGULI DE POLITEȚE (nu opționale):
-      - delay >= 1.5s între cereri, fără paralelizare;
-      - cere defalcări MICI. POP105A are 104 vârste x 3 sexe x 3 medii x 55
-        unități teritoriale x 23 ani = ~1.2M celule. Nu ai nevoie de ele și
-        cererea e abuzivă. Selectează exact ce îți trebuie;
-      - dacă primești 429/503, oprește-te și crește delay-ul.
-    """
-    raise NotImplementedError
-
-
-def data_to_documents(matrix: str, meta: dict, data: dict,
-                      snapshot_id: str) -> list[Document]:
-    """TODO (40 min) — construiește documentele G1 dintr-o matrice.
-
-    Produce DOUĂ tipuri de document, ambele G1:
-
-      1. documentul de DATE — tabelul verbalizat
-         document_id = io.stable_id("ins", matrix, snapshot_id)
-         source_type = "official_statistics"
-
-      2. documentul de METADATE — `definitie` + `metodologie` + `observatii`
-         document_id = io.stable_id("ins_meta", matrix, snapshot_id)
-         source_type = "official_methodology"
-
-    Al doilea e mai valoros decât pare. Multe afirmații false se sprijină pe
-    confuzii de definiție — "populația rezidentă" (POP105A) vs. "populația după
-    domiciliu" (POP107D) diferă cu milioane de persoane. Fără pasajul de
-    definiție, un claim de tip `scope_shift` este imposibil de dovedit: ai două
-    cifre diferite și nimic care să explice de ce ambele sunt corecte.
-
-    published_at = `ultimaActualizare`, format "DD-MM-YYYY" — parsează-l explicit,
-    nu cu dateutil (ar putea citi 08-01-2026 ca 8 ianuarie sau 1 august).
-    """
-    raise NotImplementedError
-
-
-# --------------------------------------------------------------------------- #
-# Diacritice                                                                   #
-# --------------------------------------------------------------------------- #
-
-def restore_diacritics(text: str) -> str:
-    """TODO (decizie de proiectare, 30 min) — TEMPO livrează text fără diacritice.
-
-    Ai două opțiuni; alege UNA și aplic-o consecvent în tot corpusul:
-
-    (A) Elimină diacriticele la INDEXARE, în ambele direcții.
-        Adaugi în io.py un `fold_diacritics()` aplicat atât pasajelor cât și
-        interogărilor, doar la retrieval; textul afișat rămâne cel original.
-        + simplu, fără risc de a introduce erori
-        + funcționează pentru BM25 și pentru dense
-        - pierzi o distincție reală ("peste" vs. "pește" — rar, dar există)
-
-    (B) Restaurează diacriticele cu un model.
-        + text mai curat de citit în demo
-        - introduci erori într-o sursă G1, ceea ce e inacceptabil: dovada
-          trebuie citată exact cum a fost publicată
-
-    RECOMANDARE: (A). Nu modifica niciodată textul unei surse primare. Folosirea
-    unei forme normalizate DOAR pentru index e legitimă și se documentează în
-    data card.
-
-    Dacă alegi (A), funcția asta dispare și implementezi `fold_diacritics` în io.py.
-    """
-    raise NotImplementedError
-
-
-STARTER_MATRICES = {
-    "POP105A": dict(label="Populația rezidentă la 1 ianuarie pe grupe de vârstă, sexe, medii",
-                    topic="demografie"),
-    "POP107D": dict(label="Populația după domiciliu la 1 ianuarie",
-                    topic="demografie",
-                    note="Perechea POP105A/POP107D = sursă excelentă de claims scope_shift."),
-    # TODO: adaugă din capitolul 15 (forța de muncă) matricile de șomaj și ocupare,
-    # și din capitolul 20 cele de venituri. Navighează cu fetch_tree.
+MATRICES: dict[str, dict[str, Any]] = {
+    "POP105A": dict(
+        label="Populația rezidentă la 1 ianuarie, pe grupe de vârstă, sexe și medii",
+        indicator="populația rezidentă la 1 ianuarie",
+        um="persoane", topic="demografie",
+    ),
+    "POP107D": dict(
+        label="Populația după domiciliu la 1 ianuarie",
+        indicator="populația după domiciliu la 1 ianuarie",
+        um="persoane", topic="demografie",
+        # The pair POP105A/POP107D differs by millions of people. It is the canonical
+        # source of `scope_shift` claims: a statement that confuses the two is
+        # REFUTED, and the proof is the definition, not only the number.
+    ),
 }
+
+# TEMPO delivers everything without diacritics. Labels are ours, keyed on the exact
+# string the export contains.
+LABELS_RO: dict[str, str] = {
+    "Masculin": "bărbați",
+    "Feminin": "femei",
+    "Urban": "mediul urban",
+    "Rural": "mediul rural",
+    "Numar persoane": "persoane",
+}
+
+
+def label_ro(value: str) -> str:
+    """Romanian label for a raw INS cell; falls back to the value as delivered."""
+    value = value.strip()
+    return LABELS_RO.get(value, value)

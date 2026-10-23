@@ -10,10 +10,33 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from decimal import Decimal
-from typing import Iterator
+from typing import Iterator, NamedTuple
 
 from rofact import io
 from rofact.schemas import Document, Passage
+
+
+class Fact(NamedTuple):
+    """One observation, with every piece already phrased in Romanian.
+
+    This is the hand-over point between the two concerns: `eurostat.py` knows what
+    the codes mean, `passages.py` knows how to build a Romanian sentence. Neither
+    needs to learn the other's job.
+    """
+
+    indicator: str      # "rata șomajului"
+    teritoriu: str      # "România"
+    geo_code: str       # "RO"
+    an: str             # "2023"
+    defalcare: str      # "în rândul persoanelor de 15–74 de ani", or ""
+    valoare: float      # 5.6
+    um: str             # "%", "persoane", "milioane de euro", "la 1.000 de locuitori"
+    precizare: str      # "din populația activă", or ""
+    flag: str           # Eurostat flag, or ""
+    group: tuple        # identical for every country of one comparison
+    char_start: int     # where the source row sits in Document.text
+    char_end: int
+
 
 # --------------------------------------------------------------------------- #
 # Segmentare text narativ                                                      #
@@ -215,7 +238,7 @@ def _value_with_unit(valoare: float, um: str) -> str:
     return f"{number}{um}" if um == "%" else f"{number} {um}"
 
 
-def verbalize_facts(doc: Document, facts: list["Fact"], *,  # noqa: F821
+def verbalize_facts(doc: Document, facts: list[Fact], *,
                     focus_geo: str = FOCUS_GEO,
                     aggregate_geo: str = AGGREGATE_GEO,
                     comparative: bool = True) -> Iterator[Passage]:
@@ -362,6 +385,11 @@ def is_citable_legal_passage(text: str) -> bool:
     return bool(QUANTITY.search(text) or DEFINITION.search(text))
 
 
+def _matrix_of(doc: Document) -> str:
+    """Which INS matrix a document came from, taken from its TEMPO link."""
+    return doc.source_url.rsplit("matrix=", 1)[-1]
+
+
 def build_passages(documents: list[Document], *,
                    filter_legal: bool = True) -> list[Passage]:
     """Dispatcher: pick a segmentation strategy per source type.
@@ -378,9 +406,14 @@ def build_passages(documents: list[Document], *,
     passages: list[Passage] = []
     for doc in documents:
         if doc.source_type == "official_statistics":
-            dataset = doc.source_url.removeprefix(
-                DATA_BROWSER.split("{")[0]).split("/")[0]
-            passages += verbalize_facts(doc, to_facts(doc, dataset))
+            if doc.domain == "insse.ro":
+                from rofact.ingest.ins_tempo import to_facts as ins_facts
+                facts = ins_facts(doc, _matrix_of(doc))
+            else:
+                dataset = doc.source_url.removeprefix(
+                    DATA_BROWSER.split("{")[0]).split("/")[0]
+                facts = to_facts(doc, dataset)
+            passages += verbalize_facts(doc, facts)
         elif doc.source_type == "law":
             articles = segment_by_article(doc)
             if filter_legal:

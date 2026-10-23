@@ -13,6 +13,7 @@ extend-select = ["I", "E402"]
 ignore = [
     "C408",    # dict(a=1) instead of {"a": 1}: the scaffold uses dict(...) for readable config literals
     "DTZ011",  # date.today() without timezone: snapshot dates are calendar dates, tz is irrelevant
+    "DTZ012",  # date.fromtimestamp(): same reason — a manual export's mtime is a calendar date
     "UP035",   # deprecated typing import: cosmetic modernization, defer to the S12 cleanup pass
     "UP037",   # quotes around a type annotation: cosmetic
 ]

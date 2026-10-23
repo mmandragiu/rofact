@@ -54,6 +54,16 @@
       "notes": null
     },
     {
+      "source_id": "ins_tempo",
+      "resource": "POP105A",
+      "url": "https://statistici.insse.ro/tempoins/index.jsp?page=tables&matrix=POP105A",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/raw/ins_tempo/exportPivot_POP105A.csv",
+      "content_hash": "ec68ce3d84b3379a496a34effed3a189d1c5756bdd49f6ca6f37eb3b985a0f15",
+      "n_records": 24,
+      "notes": "export manual din interfața TEMPO"
+    },
+    {
       "source_id": "legislatie_just",
       "resource": "109-2007",
       "url": "https://legislatie.just.ro/Public/DetaliiDocument/81689",
