@@ -64,6 +64,36 @@
       "notes": "export manual din interfața TEMPO"
     },
     {
+      "source_id": "ins_tempo",
+      "resource": "POP105A-metodologie",
+      "url": "https://statistici.insse.ro/tempoins/index.jsp?page=tables&matrix=POP105A",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/raw/ins_tempo/POP105A_metodologie.txt",
+      "content_hash": "ee6ff0f123e6499b1364b8dedb0c2b15fd7f21ca26bd9ededab0c210f243251c",
+      "n_records": 1,
+      "notes": "definiție + metodologie, copiate manual din TEMPO"
+    },
+    {
+      "source_id": "ins_tempo",
+      "resource": "POP107D",
+      "url": "https://statistici.insse.ro/tempoins/index.jsp?page=tables&matrix=POP107D",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/raw/ins_tempo/exportPivot_POP107D.csv",
+      "content_hash": "6a361de288776090206feca5d9a3feb95436eeb160fa56c248b77a12e3444ac2",
+      "n_records": 35,
+      "notes": "export manual din interfața TEMPO"
+    },
+    {
+      "source_id": "ins_tempo",
+      "resource": "POP107D-metodologie",
+      "url": "https://statistici.insse.ro/tempoins/index.jsp?page=tables&matrix=POP107D",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/raw/ins_tempo/POP107D_metodologie.txt",
+      "content_hash": "0882d694eb946cf2dd52380ad2bbbecb7e0c8771f079f70407b08861dfa5dacf",
+      "n_records": 1,
+      "notes": "definiție + metodologie, copiate manual din TEMPO"
+    },
+    {
       "source_id": "legislatie_just",
       "resource": "109-2007",
       "url": "https://legislatie.just.ro/Public/DetaliiDocument/81689",

@@ -262,3 +262,38 @@ def test_document_hash_is_stable_against_row_order(tmp_path):
 
     assert (export_to_document(original, "s", "t").content_hash
             == export_to_document(reordered, "s", "t").content_hash)
+
+
+def test_methodology_becomes_a_narrative_g1_document(tmp_path):
+    """The definition is what settles a `scope_shift` claim: resident population
+    and population by domicile differ by 2.8 million in 2024, and only the
+    definitions say why both numbers are right."""
+    from rofact.ingest.ins_tempo import methodology_to_document
+    from rofact.passages import build_passages
+    from rofact.schemas import SourceTier
+
+    path = tmp_path / "POP105A_metodologie.txt"
+    path.write_text(
+        "Populatia rezidenta reprezinta totalitatea persoanelor cu cetatenie romana, "
+        "straini si fara cetatenie, care au resedinta obisnuita pe teritoriul Romaniei. "
+        "Resedinta obisnuita este locul in care o persoana isi petrece in mod normal "
+        "perioada zilnica de odihna, pentru o perioada de cel putin 12 luni.",
+        encoding="utf-8",
+    )
+    doc = methodology_to_document(path, "2026-10-23", "test")
+    assert doc.source_tier == SourceTier.G1
+    assert doc.source_type == "official_methodology"
+    assert doc.document_id.startswith("ins_meta_")
+    assert "Definiție și metodologie" in doc.title
+
+    passages = build_passages([doc])
+    assert passages and all(not p.is_verbalized for p in passages)   # narrative text
+    assert any("12 luni" in p.text for p in passages)
+
+
+def test_methodology_that_is_too_short_is_refused(tmp_path):
+    from rofact.ingest.ins_tempo import methodology_to_document
+    path = tmp_path / "POP105A_metodologie.txt"
+    path.write_text("Populatia.", encoding="utf-8")
+    with pytest.raises(ValueError, match="prea scurt"):
+        methodology_to_document(path, "2026-10-23", "test")

@@ -228,7 +228,53 @@ def ingest(snapshot_id: str) -> tuple[list[Document], list[SnapshotEntry]]:
         entries.append(make_entry("ins_tempo", matrix, document.source_url, path,
                                   n_records=len(parse_export(path)),
                                   notes="export manual din interfața TEMPO"))
+
+    for path in sorted(EXPORT_DIR.glob("*_metodologie.txt")):
+        matrix = matrix_from_filename(path)
+        document = methodology_to_document(path, snapshot_id, license)
+        documents.append(document)
+        entries.append(make_entry("ins_tempo", f"{matrix}-metodologie",
+                                  document.source_url, path, n_records=1,
+                                  notes="definiție + metodologie, copiate manual din TEMPO"))
     return documents, entries
+
+
+def methodology_to_document(path: Path, snapshot_id: str, license: str) -> Document:
+    """A matrix's definition and methodology, as a narrative G1 document.
+
+    These are worth more than they look. Many false claims rest on a confusion of
+    definitions: "resident population" (POP105A) and "population by domicile"
+    (POP107D) differ by 2.8 million people in 2024. Without the passage defining
+    each one, a `scope_shift` claim cannot be settled — there would be two official
+    numbers and nothing saying why both are right.
+
+    INS confirmed in writing (2026-08-04) that the definitions and methodological
+    notes may be redistributed together with the data, with the source named.
+
+    The text is copied by hand from the matrix page in TEMPO (manual download only),
+    saved as `<MATRIX>_metodologie.txt`. It is kept exactly as copied — the source
+    of a G1 passage is never edited — and segmented as narrative text.
+    """
+    matrix = matrix_from_filename(path)
+    spec = MATRICES.get(matrix, {})
+    text = io.normalize_text(path.read_text(encoding="utf-8-sig"))
+    if len(text) < 50:
+        raise ValueError(f"{path.name}: prea scurt — ai copiat definiția întreagă?")
+
+    return Document(
+        document_id=io.stable_id("ins_meta", matrix, snapshot_id),
+        source_url=TEMPO_URL.format(matrix=matrix),
+        title=f"Definiție și metodologie — {spec.get('label', matrix)}",
+        source_type="official_methodology",
+        source_tier=SourceTier.G1,
+        domain="insse.ro",
+        published_at=None,
+        retrieved_at=date.fromtimestamp(path.stat().st_mtime),
+        snapshot_id=snapshot_id,
+        content_hash=io.sha256_text(text),
+        license=license,
+        text=text,
+    )
 
 
 # --------------------------------------------------------------------------- #

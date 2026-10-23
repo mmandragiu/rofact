@@ -84,50 +84,50 @@ def segment_document(doc: Document, *, target_words: int = TARGET_WORDS,
     once: a claim proved by half a sentence is not proved at all. Offsets are real
     positions in `doc.text`, which the extractive explanations in S11 rely on.
     """
-    sentences = split_sentences(doc.text)
-    passages: list[Passage] = []
-    cursor = 0          # how far into doc.text we have consumed
-    buffer: list[str] = []
-    buffer_start = 0
+    # Locate every sentence once, in order. Searching again later (as an earlier
+    # version did) finds the FIRST occurrence of a repeated sentence and returns a
+    # wrong offset.
+    located: list[tuple[int, int, int]] = []        # (start, end, words)
+    cursor = 0
+    for sentence in split_sentences(doc.text):
+        start = doc.text.find(sentence, cursor)
+        if start == -1:
+            start = cursor
+        cursor = start + len(sentence)
+        located.append((start, cursor, len(sentence.split())))
 
-    def flush(carry: list[str]) -> list[str]:
-        if not buffer:
-            return []
-        text = " ".join(buffer)
+    passages: list[Passage] = []
+    i = 0
+    while i < len(located):
+        # Grow a window from sentence i until it reaches the target size. It always
+        # holds at least one sentence, however long — never cut mid-sentence.
+        j, words = i, 0
+        while j < len(located) and (j == i or words < target_words):
+            words += located[j][2]
+            j += 1
+
+        start, end = located[i][0], located[j - 1][1]
         passages.append(Passage(
-            passage_id=io.stable_id("p", doc.document_id, str(buffer_start)),
+            passage_id=io.stable_id("p", doc.document_id, str(start)),
             document_id=doc.document_id,
-            text=text,
-            char_start=buffer_start,
-            char_end=buffer_start + len(text),
+            text=doc.text[start:end],       # the real slice: offsets are exact
+            char_start=start,
+            char_end=end,
             is_verbalized=False,
         ))
-        return carry
+        if j >= len(located):
+            break
 
-    for sentence in sentences:
-        position = doc.text.find(sentence, cursor)
-        if position == -1:
-            position = cursor
-        cursor = position + len(sentence)
-
-        if not buffer:
-            buffer_start = position
-        buffer.append(sentence)
-
-        if sum(len(s.split()) for s in buffer) >= target_words:
-            # Start the next passage with the tail of this one.
-            carry, words = [], 0
-            for sentence_back in reversed(buffer):
-                if words >= overlap_words:
-                    break
-                carry.insert(0, sentence_back)
-                words += len(sentence_back.split())
-            flush(carry)
-            buffer = carry
-            buffer_start = doc.text.find(carry[0], buffer_start) if carry else cursor
-
-    if buffer and (len(passages) == 0 or " ".join(buffer) != passages[-1].text):
-        flush([])
+        # The next window starts with a tail of this one, but ALWAYS after sentence
+        # i. An earlier version could carry the whole window over when it was one
+        # long sentence (a formula block, with ';' and no '.'), so the next passage
+        # started at the same offset — two passages, one id. Validator check C1
+        # caught it on the POP107D methodology.
+        k, back = j, 0
+        while k - 1 > i and back < overlap_words:
+            k -= 1
+            back += located[k][2]
+        i = k
     return passages
 
 

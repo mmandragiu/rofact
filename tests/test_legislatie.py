@@ -299,3 +299,24 @@ def test_build_passages_filters_laws_but_can_be_asked_not_to():
 
     everything = build_passages([doc], filter_legal=False)
     assert [p.section for p in everything] == ["Art. 1", "Art. 2", "Art. 3"]
+
+
+def test_window_segmentation_never_repeats_a_start():
+    """Regression: a formula block is one long 'sentence' (';' and no '.'). The
+    overlap used to carry the whole window over, so the next passage began at the
+    same offset — two passages, one id. Validator check C1 caught it on POP107D."""
+    formula = "P(t+1) = P(t) + N - D + dM; unde: " + "termen; " * 260
+    doc = make_doc(formula + ". Urmează text normal. " + "O propoziție scurtă. " * 60)
+    passages = segment_document(doc)
+
+    ids = [p.passage_id for p in passages]
+    starts = [p.char_start for p in passages]
+    assert len(ids) == len(set(ids))                    # no duplicate ids
+    assert starts == sorted(set(starts))                # strictly increasing
+
+
+def test_window_offsets_are_exact_even_with_repeated_sentences():
+    """Identical sentences must not send an offset back to their first occurrence."""
+    doc = make_doc("Punctul prevede ceva anume. " * 90)
+    for p in segment_document(doc):
+        assert doc.text[p.char_start:p.char_end] == p.text
