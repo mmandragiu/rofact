@@ -223,13 +223,15 @@ def ingest(snapshot_id: str) -> tuple[list[Document], list[SnapshotEntry]]:
     documents: list[Document] = []
     entries: list[SnapshotEntry] = []
     for spec in ACTS:
-        results = search(token, an=spec["an"], numar=spec["numar"], rezultate=10)
+        results = search(token, an=spec.get("an"), numar=spec.get("numar"),
+                          titlu=spec.get("titlu"), rezultate=10)
         act = pick_act(results, spec)
         if act is None:
             print(f"    ! {spec['numar']}/{spec['an']} ({spec['eticheta']}): negăsit")
             continue
 
-        resource = f"{spec['numar']}-{spec['an']}"
+        resource = (f"{spec['numar']}-{spec['an']}" if spec.get("numar")
+                    else spec["eticheta"].lower().replace(" ", "-"))
         raw_path = save_raw(snapshot_id, "legislatie", resource,
                             act.get("Text", ""), ext="txt")
         document = act_to_document(act, snapshot_id, license)
@@ -245,19 +247,38 @@ def ingest(snapshot_id: str) -> tuple[list[Document], list[SnapshotEntry]]:
 
 
 def pick_act(results: list[dict[str, str]], spec: dict[str, Any]) -> dict[str, str] | None:
-    """Choose the act itself, not its amendments or implementing norms.
+    """Choose the act itself, not its amendments, decrees or implementing norms.
 
-    A search for 227/2015 returns the law, the consolidated code, the decree that
-    promulgated it and the methodological norms. The wanted one is the longest
-    whose title contains the expected keyword — amendments are short, norms carry
-    a different title.
+    Searching 227/2015 returns every act numbered 227 that year — decrees, orders,
+    decisions — while the consolidated Codul fiscal is NOT among them: codes are
+    stored as their own entry, with `TipAct` = "CODUL FISCAL", findable by title.
+    A title search in turn also returns the implementing norms, which are LONGER
+    than the code itself.
+
+    So length alone picks the wrong document either way. Ranking, in order:
+      1. the expected `TipAct`, when the spec names one;
+      2. the keyword in the title;
+      3. length, as the tie-break.
     """
+    tip = spec.get("tip", "").lower()
     keyword = spec.get("contine", "").lower()
-    candidates = [a for a in results
-                  if keyword in io.normalize_text(a.get("Titlu", "")).lower()]
-    if not candidates:
-        candidates = results
-    return max(candidates, key=lambda a: len(a.get("Text", "")), default=None)
+
+    def score(act: dict[str, str]) -> tuple[int, int, int]:
+        titlu = io.normalize_text(act.get("Titlu", "")).lower()
+        return (
+            1 if tip and act.get("TipAct", "").lower() == tip else 0,
+            1 if keyword and keyword in titlu else 0,
+            len(act.get("Text", "")),
+        )
+
+    best = max(results, key=score, default=None)
+    if best is None:
+        return None
+    # A spec that names a type or keyword must match one of them: otherwise we
+    # would silently ingest an unrelated act that happened to be the longest.
+    if (tip or keyword) and score(best)[:2] == (0, 0):
+        return None
+    return best
 
 
 # --------------------------------------------------------------------------- #
@@ -273,20 +294,26 @@ def pick_act(results: list[dict[str, str]], spec: dict[str, Any]) -> dict[str, s
 # `pick_act` does not pick up the implementing norms instead of the act.
 
 ACTS: list[dict[str, Any]] = [
-    dict(an="2015", numar="227", contine="codul fiscal",
+    # Consolidated codes live under their own TipAct and are found by title, not
+    # by number — see pick_act.
+    dict(titlu="Codul fiscal", tip="CODUL FISCAL", contine="codul fiscal",
          eticheta="Codul fiscal", topic="legislatie"),
-    dict(an="2003", numar="53", contine="codul muncii",
+    dict(titlu="Codul muncii", tip="CODUL MUNCII", contine="codul muncii",
          eticheta="Codul muncii", topic="legislatie"),
-    dict(an="2001", numar="544", contine="informatiilor de interes public",
-         eticheta="Liberul acces la informațiile de interes public", topic="administratie_publica"),
-    dict(an="2016", numar="98", contine="achizitiile publice",
+    # Ordinary laws are unambiguous by year + number.
+    dict(an="2001", numar="544", tip="LEGE", contine="informatiilor de interes public",
+         eticheta="Liberul acces la informațiile de interes public",
+         topic="administratie_publica"),
+    dict(an="2016", numar="98", tip="LEGE", contine="achizitiile publice",
          eticheta="Achizițiile publice", topic="administratie_publica"),
-    dict(an="2010", numar="263", contine="sistemul unitar de pensii",
+    dict(an="2010", numar="263", tip="LEGE", contine="sistemul unitar de pensii",
          eticheta="Sistemul unitar de pensii publice", topic="administratie_publica"),
-    dict(an="2006", numar="273", contine="finantele publice locale",
+    dict(an="2006", numar="273", tip="LEGE", contine="finantele publice locale",
          eticheta="Finanțele publice locale", topic="administratie_publica"),
-    dict(an="2022", numar="179", contine="date deschise",
-         eticheta="Datele deschise și reutilizarea informațiilor", topic="administratie_publica"),
-    dict(an="2007", numar="109", contine="reutilizarea informatiilor",
-         eticheta="Reutilizarea informațiilor din instituțiile publice", topic="administratie_publica"),
+    dict(an="2022", numar="179", tip="LEGE", contine="date deschise",
+         eticheta="Datele deschise și reutilizarea informațiilor",
+         topic="administratie_publica"),
+    dict(an="2007", numar="109", tip="LEGE", contine="reutilizarea informatiilor",
+         eticheta="Reutilizarea informațiilor din instituțiile publice",
+         topic="administratie_publica"),
 ]

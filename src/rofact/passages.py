@@ -322,12 +322,56 @@ def format_number_ro(value: float, *, decimals: int | None = None) -> str:
     return f"-{text}" if value < 0 else text
 
 
-def build_passages(documents: list[Document]) -> list[Passage]:
+# --------------------------------------------------------------------------- #
+# Selecting which legal passages are worth keeping                             #
+# --------------------------------------------------------------------------- #
+#
+# Separate from segmentation on purpose: HOW to cut a text and WHAT to keep are
+# different decisions, and only the second one depends on the corpus budget.
+#
+# Official sources must stay at 20-30% of a 10,000-13,000 passage corpus — the
+# rest has to be media, or the noise experiment has nothing to measure. The eight
+# acts yield 4,077 article passages on their own, the Fiscal Code 2,689 of them.
+#
+# The filter follows the claim policy rather than cutting arbitrarily: the
+# annotation guide (§7) restricts legislation claims to literally verifiable facts
+# — a numeric threshold, a deadline, a date of entry into force — so an article
+# with no quantity in it cannot settle one.
+# The optional "de" is not cosmetic: Romanian requires it between a number above
+# twenty and its unit ("30 de zile", "100 de lei"), so leaving it out silently
+# dropped most thresholds in the corpus — exactly the ones claims are made of.
+QUANTITY = re.compile(
+    r"\d[\d.,]*\s*(?:de\s+)?(%|lei|euro|zile|luni|ani|puncte procentuale)"
+    r"|\b(19|20)\d{2}\b"
+)
+
+# Explicit exception: "the Fiscal Code defines a permanent establishment as ..."
+# is verifiable without any number, and definitions are a genuine claim category
+# (the demography domain rests on exactly this kind of distinction).
+#
+# Written to match text with and without diacritics: legal texts carry them, but
+# INS delivers its own text stripped of ș/ț, and the same filter is reused there.
+# The endings are spelled out so "definitiv" is not mistaken for "definiție".
+DEFINITION = re.compile(
+    r"defini[țt]i[ieaț]|[iî]n[țt]eleg|[iî]n[țt]elesul|semnifica[țt]i", re.IGNORECASE
+)
+
+
+def is_citable_legal_passage(text: str) -> bool:
+    """Can this passage settle a legislation claim on its own?"""
+    return bool(QUANTITY.search(text) or DEFINITION.search(text))
+
+
+def build_passages(documents: list[Document], *,
+                   filter_legal: bool = True) -> list[Passage]:
     """Dispatcher: pick a segmentation strategy per source type.
 
         official_statistics  -> verbalise the table
-        law                  -> split by article          (S3)
-        anything else        -> sliding window            (S3, media and PDFs)
+        law                  -> split by article, keep the citable ones
+        anything else        -> sliding window            (media and PDFs)
+
+    `filter_legal=False` keeps every article — useful for inspecting what the
+    budget filter is throwing away.
     """
     from rofact.ingest.eurostat import DATA_BROWSER, to_facts
 
@@ -338,7 +382,10 @@ def build_passages(documents: list[Document]) -> list[Passage]:
                 DATA_BROWSER.split("{")[0]).split("/")[0]
             passages += verbalize_facts(doc, to_facts(doc, dataset))
         elif doc.source_type == "law":
-            passages += segment_by_article(doc)
+            articles = segment_by_article(doc)
+            if filter_legal:
+                articles = [p for p in articles if is_citable_legal_passage(p.text)]
+            passages += articles
         else:
             passages += segment_document(doc)
     return passages

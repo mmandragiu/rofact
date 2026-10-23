@@ -52,6 +52,86 @@
       "content_hash": "9386503b2b76b9baa7220fff99ac998e3d580a330a09eec866f9523baf0a3d1e",
       "n_records": 895,
       "notes": null
+    },
+    {
+      "source_id": "legislatie_just",
+      "resource": "109-2007",
+      "url": "https://legislatie.just.ro/Public/DetaliiDocument/81689",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/legislatie/109-2007.txt",
+      "content_hash": "5d0c164af09683c4bdff546f694c7636b4e0da2228bd45d0e69606e38ae52f03",
+      "n_records": 1,
+      "notes": "DataVigoare=2007-05-08"
+    },
+    {
+      "source_id": "legislatie_just",
+      "resource": "179-2022",
+      "url": "https://legislatie.just.ro/Public/DetaliiDocument/256414",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/legislatie/179-2022.txt",
+      "content_hash": "de6eaee3f8a7804058f2f2188fddba6698ad672634b11436c1dc80ecda0fc013",
+      "n_records": 1,
+      "notes": "DataVigoare=2022-06-17"
+    },
+    {
+      "source_id": "legislatie_just",
+      "resource": "263-2010",
+      "url": "https://legislatie.just.ro/Public/DetaliiDocument/124530",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/legislatie/263-2010.txt",
+      "content_hash": "fd6177353b0610d392fa33dc0a81571dfe8804a2a8f29c22813b15566b58ac33",
+      "n_records": 1,
+      "notes": "DataVigoare=2011-01-01"
+    },
+    {
+      "source_id": "legislatie_just",
+      "resource": "273-2006",
+      "url": "https://legislatie.just.ro/Public/DetaliiDocument/73527",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/legislatie/273-2006.txt",
+      "content_hash": "ff9a74741cbedafa723d4fe90ee268152f46af2f052064f1c1c22a6b2c0bdcbe",
+      "n_records": 1,
+      "notes": "DataVigoare=2007-01-01"
+    },
+    {
+      "source_id": "legislatie_just",
+      "resource": "544-2001",
+      "url": "https://legislatie.just.ro/Public/DetaliiDocument/31413",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/legislatie/544-2001.txt",
+      "content_hash": "737f4382f20ea77cd2e98242744382f5a30586a1f57b0dac3ab6fcb0e8bdae92",
+      "n_records": 1,
+      "notes": "DataVigoare=2001-12-22"
+    },
+    {
+      "source_id": "legislatie_just",
+      "resource": "98-2016",
+      "url": "https://legislatie.just.ro/Public/DetaliiDocument/178667",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/legislatie/98-2016.txt",
+      "content_hash": "5887feac6d0b403cd13f614ad3cda525920c5580942f63c75384a7629f352a47",
+      "n_records": 1,
+      "notes": "DataVigoare=2016-05-26"
+    },
+    {
+      "source_id": "legislatie_just",
+      "resource": "codul-fiscal",
+      "url": "https://legislatie.just.ro/Public/DetaliiDocument/171282",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/legislatie/codul-fiscal.txt",
+      "content_hash": "adcba070bacebf2e483e37084f60ed771eb2b3a3eb9f70a3ca4c678693ee65fd",
+      "n_records": 1,
+      "notes": "DataVigoare=2016-01-01"
+    },
+    {
+      "source_id": "legislatie_just",
+      "resource": "codul-muncii",
+      "url": "https://legislatie.just.ro/Public/DetaliiDocument/128647",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/legislatie/codul-muncii.txt",
+      "content_hash": "c7697807134faf405ec95360cb515b5a2c71da1441b166f301d753dcf9203440",
+      "n_records": 1,
+      "notes": "DataVigoare=2011-05-18"
     }
   ]
 }

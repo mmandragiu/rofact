@@ -23,7 +23,13 @@ from rofact.ingest.legislatie import (
     pick_act,
     repair_issuer,
 )
-from rofact.passages import segment_by_article, segment_document, split_sentences
+from rofact.passages import (
+    build_passages,
+    is_citable_legal_passage,
+    segment_by_article,
+    segment_document,
+    split_sentences,
+)
 from rofact.schemas import Document, SourceTier
 
 
@@ -236,3 +242,60 @@ def test_client_errors_are_not_retried(monkeypatch):
     monkeypatch.setattr(legislatie.urllib.request, "urlopen", not_found)
     with pytest.raises(urllib.error.HTTPError):
         legislatie.get_token()
+
+
+# --------------------------------------------------------------------------- #
+# Corpus budget: which legal passages are worth keeping                        #
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("text", [
+    "intră în vigoare în termen de minimum 6 luni",
+    "cota este de 16%",
+    "plafonul de 300.000 lei",
+    "venituri de 88.500 euro",
+    "începând cu 1 ianuarie 2021",
+    "termen de 30 de zile de la comunicare",
+])
+def test_passages_with_a_quantity_are_kept(text):
+    """Legislation claims are restricted to literally verifiable facts, and every
+    one of those rests on a number: a threshold, a deadline, a date."""
+    assert is_citable_legal_passage(text)
+
+
+@pytest.mark.parametrize("text", [
+    "În înțelesul prezentului cod, sediul permanent este un loc",
+    "In intelesul prezentului cod, sediul permanent este un loc",
+    "Articolul 7 Definiții ale termenilor comuni",
+    "Articolul 7 Definitii ale termenilor comuni",
+    "prin producție se înțelege activitatea de",
+])
+def test_definitions_are_kept_even_without_a_number(text):
+    """"The Fiscal Code defines a permanent establishment as ..." is verifiable
+    without any quantity. Written to match text with and without diacritics,
+    because INS delivers its own text stripped of ș/ț."""
+    assert is_citable_legal_passage(text)
+
+
+@pytest.mark.parametrize("text", [
+    "Principiile fiscalității: a) neutralitatea măsurilor fiscale",
+    "Aplicarea unitară a prezentului cod se asigură prin Comisia fiscală",
+    "prevăzute la art. 2 alin. (2)",          # a cross-reference proves nothing
+    "hotărâre definitivă și irevocabilă",     # not a definition
+])
+def test_passages_with_nothing_verifiable_are_dropped(text):
+    assert not is_citable_legal_passage(text)
+
+
+def test_build_passages_filters_laws_but_can_be_asked_not_to():
+    """The eight acts yield 4,077 article passages; official sources must stay at
+    20-30% of the corpus or the noise experiment has nothing to measure."""
+    doc = make_doc(
+        "Articolul 1 Cota este de 16%. "
+        "Articolul 2 Principiile generale ale prezentei legi sunt următoarele. "
+        "Articolul 3 În înțelesul prezentei legi, termenul X are următorul sens."
+    )
+    kept = build_passages([doc])
+    assert [p.section for p in kept] == ["Art. 1", "Art. 3"]
+
+    everything = build_passages([doc], filter_legal=False)
+    assert [p.section for p in everything] == ["Art. 1", "Art. 2", "Art. 3"]
