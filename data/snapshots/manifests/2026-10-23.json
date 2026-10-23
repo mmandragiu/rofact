@@ -1,0 +1,57 @@
+{
+  "snapshot_id": "2026-10-23",
+  "created_at": "2026-10-23",
+  "schema_version": "1.0.0",
+  "entries": [
+    {
+      "source_id": "eurostat",
+      "resource": "demo_gind",
+      "url": "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/demo_gind?format=JSON&lang=EN&geo=BE&geo=BG&geo=CZ&geo=DK&geo=DE&geo=EE&geo=IE&geo=EL&geo=ES&geo=FR&geo=HR&geo=IT&geo=CY&geo=LV&geo=LT&geo=LU&geo=HU&geo=MT&geo=NL&geo=AT&geo=PL&geo=PT&geo=RO&geo=SI&geo=SK&geo=FI&geo=SE&geo=EU27_2020&sinceTimePeriod=2010&indic_de=JAN&indic_de=GBIRTHRT&indic_de=GDEATHRT&indic_de=NATGROWRT",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/eurostat/demo_gind.json",
+      "content_hash": "0ac11fe1b6dbeccc26c88bd6b091dc7aeac0a30af1ab54bbc0364aaf5c9c6dfa",
+      "n_records": 1820,
+      "notes": null
+    },
+    {
+      "source_id": "eurostat",
+      "resource": "ilc_li02",
+      "url": "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ilc_li02?format=JSON&lang=EN&geo=BE&geo=BG&geo=CZ&geo=DK&geo=DE&geo=EE&geo=IE&geo=EL&geo=ES&geo=FR&geo=HR&geo=IT&geo=CY&geo=LV&geo=LT&geo=LU&geo=HU&geo=MT&geo=NL&geo=AT&geo=PL&geo=PT&geo=RO&geo=SI&geo=SK&geo=FI&geo=SE&geo=EU27_2020&sinceTimePeriod=2010&statinfo=MED_EI&rskpovth=B_60&unit=PC&sex=T&age=TOTAL",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/eurostat/ilc_li02.json",
+      "content_hash": "2e29484322084755255eb9a92f9870b7335ea1a0fa2a8d4d0f66a91f785481b5",
+      "n_records": 445,
+      "notes": null
+    },
+    {
+      "source_id": "eurostat",
+      "resource": "nama_10_gdp",
+      "url": "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/nama_10_gdp?format=JSON&lang=EN&geo=BE&geo=BG&geo=CZ&geo=DK&geo=DE&geo=EE&geo=IE&geo=EL&geo=ES&geo=FR&geo=HR&geo=IT&geo=CY&geo=LV&geo=LT&geo=LU&geo=HU&geo=MT&geo=NL&geo=AT&geo=PL&geo=PT&geo=RO&geo=SI&geo=SK&geo=FI&geo=SE&geo=EU27_2020&sinceTimePeriod=2010&na_item=B1GQ&unit=CP_MEUR&unit=CLV_PCH_PRE",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/eurostat/nama_10_gdp.json",
+      "content_hash": "10b4dad83ce937b99c9b25400288f7ecf3553a25cbea36c8972bd2119e8f9daf",
+      "n_records": 896,
+      "notes": null
+    },
+    {
+      "source_id": "eurostat",
+      "resource": "prc_hicp_aind",
+      "url": "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_aind?format=JSON&lang=EN&geo=BE&geo=BG&geo=CZ&geo=DK&geo=DE&geo=EE&geo=IE&geo=EL&geo=ES&geo=FR&geo=HR&geo=IT&geo=CY&geo=LV&geo=LT&geo=LU&geo=HU&geo=MT&geo=NL&geo=AT&geo=PL&geo=PT&geo=RO&geo=SI&geo=SK&geo=FI&geo=SE&geo=EU27_2020&sinceTimePeriod=2010&coicop=CP00&unit=RCH_A_AVG",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/eurostat/prc_hicp_aind.json",
+      "content_hash": "9230c37c981973360581a9284858f736c3c8cb11128c39c289cd51a277f78535",
+      "n_records": 448,
+      "notes": null
+    },
+    {
+      "source_id": "eurostat",
+      "resource": "une_rt_a",
+      "url": "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/une_rt_a?format=JSON&lang=EN&geo=BE&geo=BG&geo=CZ&geo=DK&geo=DE&geo=EE&geo=IE&geo=EL&geo=ES&geo=FR&geo=HR&geo=IT&geo=CY&geo=LV&geo=LT&geo=LU&geo=HU&geo=MT&geo=NL&geo=AT&geo=PL&geo=PT&geo=RO&geo=SI&geo=SK&geo=FI&geo=SE&geo=EU27_2020&sinceTimePeriod=2010&sex=T&unit=PC_ACT&age=Y15-74&age=Y15-24",
+      "retrieved_at": "2026-10-23",
+      "raw_path": "data/snapshots/2026-10-23/eurostat/une_rt_a.json",
+      "content_hash": "9386503b2b76b9baa7220fff99ac998e3d580a330a09eec866f9523baf0a3d1e",
+      "n_records": 895,
+      "notes": null
+    }
+  ]
+}

@@ -32,8 +32,6 @@ NOT_AUTOMATED = {
                  "Exporturile se pun în data/raw/ins_tempo/ și se parsează de acolo (S3).",
     "datagov": "CKAN dă doar metadate; datele sunt XLSX/PDF, câte un layout per "
                "instituție. Decizie de luat la S3 (vezi source_registry.md).",
-    "legislatie": "API SOAP oficial, de implementat la S3 "
-                  "(http://legislatie.just.ro/apiws/FreeWebService.svc/SOAP).",
     "pdf_docs": "Rapoarte BNR / Ministerul Finanțelor, de implementat la S3.",
     "media": "Corpusul de presă, S4.",
 }
@@ -44,6 +42,10 @@ def run_ingest(source: str, snapshot_id: str) -> tuple[list[Document], list[Snap
     if source == "eurostat":
         from rofact.ingest import eurostat
         return eurostat.ingest(snapshot_id)
+
+    if source == "legislatie":
+        from rofact.ingest import legislatie
+        return legislatie.ingest(snapshot_id)
 
     if source in NOT_AUTOMATED:
         raise NotImplementedError(f"{source}: {NOT_AUTOMATED[source]}")
@@ -93,11 +95,18 @@ def main() -> int:
 
         documents: list[Document] = []
         entries: list[SnapshotEntry] = []
+        failed: list[str] = []
         for source in sources:
             try:
                 docs, source_entries = run_ingest(source, snapshot_id)
             except NotImplementedError as exc:
                 print(f"  — {exc}")
+                continue
+            except (RuntimeError, OSError) as exc:
+                # A source being temporarily unreachable must not kill the whole
+                # build: the sources that did answer are still worth writing.
+                print(f"  ✗ {source}: {exc}")
+                failed.append(source)
                 continue
             print(f"  ✓ {source}: {len(docs)} documente, "
                   f"{sum(e.n_records or 0 for e in source_entries)} înregistrări")

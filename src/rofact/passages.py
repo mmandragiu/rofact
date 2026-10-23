@@ -7,6 +7,7 @@ este pasul care transformă statistica în dovadă citabilă.
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from decimal import Decimal
 from typing import Iterator
@@ -22,42 +23,160 @@ TARGET_WORDS = 150
 OVERLAP_WORDS = 30
 
 
+# Romanian abbreviations that end in a dot without ending a sentence. Without
+# this list every "art. 12" would be cut in half.
+ABBREVIATIONS = {
+    "nr", "art", "alin", "lit", "pct", "cap", "par", "etc", "dl", "dna",
+    "prof", "dr", "ing", "ec", "av", "jr", "sen", "dep", "ap", "str", "bd",
+    "jud", "loc", "com", "nr.crt", "max", "min", "aprox", "ex", "cf", "op",
+    "urm", "lei", "mil", "mld", "p", "pp", "vol", "ed", "col", "fig", "tab",
+}
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def split_sentences(text: str) -> list[str]:
+    """Split into sentences, without breaking on Romanian abbreviations."""
+    parts = SENTENCE_END.split(text)
+    sentences: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if sentences:
+            tail = sentences[-1].rstrip()
+            last_word = tail.rsplit(" ", 1)[-1].rstrip(".").lower()
+            # Join back when the previous piece ended on an abbreviation, or on a
+            # bare number ("art. 12. Prezentul..." is one reference, not two stops).
+            if last_word in ABBREVIATIONS or last_word.isdigit():
+                sentences[-1] = f"{tail} {part}"
+                continue
+        sentences.append(part)
+    return sentences
+
+
 def segment_document(doc: Document, *, target_words: int = TARGET_WORDS,
                      overlap_words: int = OVERLAP_WORDS) -> list[Passage]:
-    """Segmentează un document narativ în pasaje cu suprapunere.
+    """Split narrative text into overlapping passages, never mid-sentence.
 
-    TODO (45 min):
-      1. împarte textul în propoziții (regex pe [.!?] urmat de spațiu + majusculă;
-         atenție la abrevieri românești: „nr.", „art.", „alin.", „lit.", „etc.",
-         „dl.", „S.A.", „nr. crt." — o listă de excepții e suficientă, nu-ți
-         trebuie spaCy pentru asta);
-      2. acumulează propoziții până la ~target_words;
-      3. pornește pasajul următor cu ultimele ~overlap_words din cel precedent,
-         ca o afirmație aflată la graniță să apară întreagă cel puțin o dată;
-      4. char_start / char_end = offset-uri REALE în doc.text — sunt necesare
-         pentru explicațiile extractive din S11;
-      5. passage_id = io.stable_id("p", doc.document_id, str(char_start)).
-
-    Nu tăia niciodată la mijlocul unei propoziții. Un pasaj trunchiat citat ca
-    dovadă arată prost în demo și poate schimba sensul.
+    The overlap exists so a statement sitting on a boundary appears whole at least
+    once: a claim proved by half a sentence is not proved at all. Offsets are real
+    positions in `doc.text`, which the extractive explanations in S11 rely on.
     """
-    raise NotImplementedError
+    sentences = split_sentences(doc.text)
+    passages: list[Passage] = []
+    cursor = 0          # how far into doc.text we have consumed
+    buffer: list[str] = []
+    buffer_start = 0
+
+    def flush(carry: list[str]) -> list[str]:
+        if not buffer:
+            return []
+        text = " ".join(buffer)
+        passages.append(Passage(
+            passage_id=io.stable_id("p", doc.document_id, str(buffer_start)),
+            document_id=doc.document_id,
+            text=text,
+            char_start=buffer_start,
+            char_end=buffer_start + len(text),
+            is_verbalized=False,
+        ))
+        return carry
+
+    for sentence in sentences:
+        position = doc.text.find(sentence, cursor)
+        if position == -1:
+            position = cursor
+        cursor = position + len(sentence)
+
+        if not buffer:
+            buffer_start = position
+        buffer.append(sentence)
+
+        if sum(len(s.split()) for s in buffer) >= target_words:
+            # Start the next passage with the tail of this one.
+            carry, words = [], 0
+            for sentence_back in reversed(buffer):
+                if words >= overlap_words:
+                    break
+                carry.insert(0, sentence_back)
+                words += len(sentence_back.split())
+            flush(carry)
+            buffer = carry
+            buffer_start = doc.text.find(carry[0], buffer_start) if carry else cursor
+
+    if buffer and (len(passages) == 0 or " ".join(buffer) != passages[-1].text):
+        flush([])
+    return passages
+
+
+# Legal texts arrive as one continuous blob — no line breaks — so article markers
+# cannot be anchored to the start of a line. "Articolul 12" is matched anywhere,
+# but only when followed by a boundary, so "articolul 12 din Legea X" inside a
+# sentence (a cross-reference, not a heading) is not mistaken for one.
+ARTICLE = re.compile(r"\bArticolul\s+(\d+(?:\^\d+)?)\s*(?=[A-ZȘȚĂÎÂ(]|\s)")
+ALINEAT = re.compile(r"(?<![\w.])\((\d{1,2})\)\s")
+
+ARTICLE_MAX_WORDS = 400
 
 
 def segment_by_article(doc: Document) -> list[Passage]:
-    """Segmentare pentru texte legislative — pe articol, nu pe fereastră.
+    """Split a legal text by article — the natural unit of citation.
 
-    TODO (30 min):
-      1. detectează delimitatorii: „Art. 12", „Articolul 12", „ART. 12";
-      2. un pasaj = un articol complet (cu alineatele lui); dacă un articol
-         depășește ~400 de cuvinte, sparge-l pe alineate „(1)", „(2)";
-      3. Passage.section = „Art. 12" sau „Art. 12 alin. (3)".
+    A fact-checker that cites "Art. 12 alin. (3)" is usable; one that cites "a
+    150-word fragment of law X" is not. `Passage.section` carries that reference
+    straight into what the demo displays.
 
-    De ce contează: un fact-checker care citează „Art. 12 alin. (3)" e util;
-    unul care citează „un fragment de 150 de cuvinte din legea X" nu e.
-    Secțiunea ajunge direct în citarea afișată de demo.
+    Articles longer than ARTICLE_MAX_WORDS are split further by alineat, so a
+    single long article does not become one unsearchable wall of text.
+
+    Acts with no article markers at all (methodological norms are numbered by
+    point, not by article) fall back to window segmentation.
     """
-    raise NotImplementedError
+    marks = list(ARTICLE.finditer(doc.text))
+    if not marks:
+        return segment_document(doc)
+
+    passages: list[Passage] = []
+    for i, mark in enumerate(marks):
+        start = mark.start()
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(doc.text)
+        body = doc.text[start:end].strip()
+        if not body:
+            continue
+        number = mark.group(1)
+
+        if len(body.split()) <= ARTICLE_MAX_WORDS:
+            passages.append(_article_passage(doc, body, start, end, f"Art. {number}"))
+            continue
+
+        # Too long: cut at alineat boundaries, keeping the article heading on the
+        # first chunk so every piece stays attributable.
+        cuts = [m.start() for m in ALINEAT.finditer(body)] or [0]
+        if cuts[0] != 0:
+            cuts.insert(0, 0)
+        cuts.append(len(body))
+        for j in range(len(cuts) - 1):
+            chunk = body[cuts[j]:cuts[j + 1]].strip()
+            if len(chunk.split()) < 5:
+                continue
+            alineat = ALINEAT.match(body[cuts[j]:])
+            section = (f"Art. {number} alin. ({alineat.group(1)})"
+                       if alineat else f"Art. {number}")
+            passages.append(_article_passage(
+                doc, chunk, start + cuts[j], start + cuts[j + 1], section))
+    return passages
+
+
+def _article_passage(doc: Document, text: str, char_start: int, char_end: int,
+                     section: str) -> Passage:
+    return Passage(
+        passage_id=io.stable_id("p", doc.document_id, str(char_start)),
+        document_id=doc.document_id,
+        text=text,
+        char_start=char_start,
+        char_end=char_end,
+        section=section,
+        is_verbalized=False,
+    )
 
 
 # --------------------------------------------------------------------------- #
