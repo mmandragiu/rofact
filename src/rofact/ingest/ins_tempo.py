@@ -80,12 +80,22 @@ def read_export(path: Path) -> tuple[list[str], list[list[str]]]:
 
 
 def _parse_value(cell: str) -> float | None:
-    """INS writes plain integers; ':' and '-' mark a missing observation."""
-    cell = cell.replace(" ", "").replace(".", "")
+    """Parse an INS value. ':' and '-' mark a missing observation, not a zero.
+
+    The dot is the DECIMAL separator ("8.4"), and there is no thousands separator
+    ("19068290"). A comma cannot appear in a number: the export's own column
+    separator is ", ".
+
+    An earlier version stripped the dots, assuming they separated thousands. On
+    the first matrices every value was a whole number, so nothing showed — until
+    unemployment rates arrived and 8.4% was read as 84%. Exactly the kind of
+    wrong-but-unbroken number that poisons ground truth, so it has a test.
+    """
+    cell = cell.strip()
     if cell in {"", ":", "-", "*"}:
         return None
     try:
-        return float(cell.replace(",", "."))
+        return float(cell)
     except ValueError:
         return None
 
@@ -151,7 +161,11 @@ def to_facts(doc: Document, matrix: str) -> list[Fact]:
     offset = len(lines[0]) + 1
 
     unit_column = next((c for c in header if c.lower().startswith("um")), None)
-    year_column = next((c for c in header if c.strip().lower() == "ani"), None)
+    # "Ani" in most matrices; "Perioade" where annual and quarterly rows are mixed
+    # (AMG159A). Only "Anul YYYY" rows are kept — quarterly ones fail the YEAR
+    # match below and are skipped, since claims about these indicators are annual.
+    year_column = next((c for c in header
+                        if c.strip().lower() in ("ani", "perioade")), None)
     territory_column = next((c for c in header if "judete" in c.lower()
                              or "macroregiuni" in c.lower()), None)
 
@@ -298,6 +312,26 @@ MATRICES: dict[str, dict[str, Any]] = {
         # source of `scope_shift` claims: a statement that confuses the two is
         # REFUTED, and the proof is the definition, not only the number.
     ),
+    # The unemployment pair, same shape as the population pair: two official
+    # rates, two definitions, two different numbers. BIM is measured by survey and
+    # counts anyone looking for work; registered counts only people signed up with
+    # the employment agency — so it is lower, and the one a claim picks says
+    # something about the claim.
+    "AMG159A": dict(
+        label="Rata șomajului BIM (date comparabile)",
+        indicator="rata șomajului BIM",
+        um="%", precizare="din populația activă, conform definiției BIM",
+        topic="economie",
+        # "Comparable data": 2009-2020 recalculated to the definitions in force
+        # since 2021. Without that, a change of method would read as a real change
+        # in unemployment.
+    ),
+    "SOM103A": dict(
+        label="Rata șomajului înregistrat, pe județe",
+        indicator="rata șomajului înregistrat",
+        um="%", precizare="șomeri înregistrați la ANOFM, din populația activă civilă",
+        topic="economie",
+    ),
 }
 
 # TEMPO delivers everything without diacritics. Labels are ours, keyed on the exact
@@ -308,6 +342,21 @@ LABELS_RO: dict[str, str] = {
     "Urban": "mediul urban",
     "Rural": "mediul rural",
     "Numar persoane": "persoane",
+    # Counties, with the diacritics TEMPO drops. Claims are written "Timiș", and a
+    # passage reading "Timis" would not match them lexically.
+    "Arges": "Argeș", "Bacau": "Bacău", "Bistrita-Nasaud": "Bistrița-Năsăud",
+    "Botosani": "Botoșani", "Braila": "Brăila", "Brasov": "Brașov",
+    "Buzau": "Buzău", "Calarasi": "Călărași", "Caras-Severin": "Caraș-Severin",
+    "Constanta": "Constanța", "Dambovita": "Dâmbovița", "Galati": "Galați",
+    "Ialomita": "Ialomița", "Iasi": "Iași", "Maramures": "Maramureș",
+    "Mehedinti": "Mehedinți", "Mures": "Mureș", "Neamt": "Neamț",
+    "Salaj": "Sălaj", "Timis": "Timiș", "Valcea": "Vâlcea",
+    # Bucharest changed shape in 1997, when Ilfov county was re-established from
+    # its agricultural sector (SAI). The two series do not overlap in any year,
+    # so no ranking counts Bucharest twice — but they are different territories,
+    # and calling the pre-1997 one plain "București" would misstate it.
+    "Municipiul Bucuresti": "București",
+    "Mun. Bucuresti -incl. SAI": "București (inclusiv Sectorul Agricol Ilfov)",
 }
 
 

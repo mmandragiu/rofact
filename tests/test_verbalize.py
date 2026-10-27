@@ -138,3 +138,34 @@ def test_template_diversity_is_even():
     """A skewed template mix would be an artefact the model could learn."""
     counts = Counter(p.template_id for p in verbalize_facts(DOC, FACTS))
     assert counts["t1"] == counts["t2"] == counts["t3"] == 1
+
+
+def test_county_rankings_are_not_labelled_as_eu_comparisons():
+    """Regression: the comparison scope was hard-coded as "comparativ în UE", so a
+    ranking of Romanian counties came out labelled as an EU comparison — with
+    Romania itself ranked among its own counties."""
+    from rofact.passages import COUNTY_SCOPE
+
+    group = ("SOM103A", "rata șomajului înregistrat", "", "2024")
+
+    def county(code, name, value):
+        return Fact(indicator="rata șomajului înregistrat", teritoriu=name,
+                    geo_code=code, an="2024", defalcare="", valoare=value, um="%",
+                    precizare="", flag="", group=group, char_start=0, char_end=10)
+
+    facts = [county("Teleorman", "Teleorman", 9.6), county("Ilfov", "Ilfov", 0.4),
+             county("RO", "România", 3.3)]
+    text = next(p.text for p in verbalize_facts(DOC, facts, scope=COUNTY_SCOPE)
+                if p.template_id == "cmp")
+    assert "pe județe" in text and "UE" not in text
+    ranking = text.split(":", 1)[1].split("La nivel național")[0]
+    assert "România" not in ranking                         # not ranked
+    assert "La nivel național: 3,3%" in text                # reported apart
+
+
+def test_eu_rankings_keep_romania_as_a_member_state():
+    """Under the EU scope Romania IS one of the ranked units; only the EU aggregate
+    is set apart."""
+    comparative = next(p for p in verbalize_facts(DOC, FACTS) if p.template_id == "cmp")
+    ranking = comparative.text.split(":", 1)[1].split("Media UE-27")[0]
+    assert "România" in ranking

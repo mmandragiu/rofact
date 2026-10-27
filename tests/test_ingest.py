@@ -25,6 +25,7 @@ from rofact.ingest.eurostat import (
     observations_to_documents,
     rows_from_document,
 )
+from rofact.schemas import Document, SourceTier
 
 # --------------------------------------------------------------------------- #
 # load_sources_config                                                          #
@@ -297,3 +298,71 @@ def test_methodology_that_is_too_short_is_refused(tmp_path):
     path.write_text("Populatia.", encoding="utf-8")
     with pytest.raises(ValueError, match="prea scurt"):
         methodology_to_document(path, "2026-10-23", "test")
+
+
+@pytest.mark.parametrize("cell, expected", [
+    ("8.4", 8.4),            # the dot is the DECIMAL separator — not 84
+    ("10.4", 10.4),
+    ("3", 3.0),
+    ("19068290", 19068290.0),
+    (":", None),             # missing, not zero
+    ("-", None),
+])
+def test_ins_values_use_a_decimal_dot(cell, expected):
+    """Regression: an earlier version stripped dots as thousands separators, so an
+    unemployment rate of 8.4% became 84%. Wrong but unbroken numbers are the most
+    dangerous bug in the project: nothing crashes, the ground truth is poisoned."""
+    from rofact.ingest.ins_tempo import _parse_value
+    assert _parse_value(cell) == expected
+
+
+def test_mixed_annual_and_quarterly_periods_keep_the_years(tmp_path):
+    """AMG159A has a "Perioade" column mixing years and quarters. Without handling
+    it every row was dropped silently; with it, the quarters are skipped and the
+    years kept."""
+    from rofact.ingest.ins_tempo import export_to_document, to_facts
+    path = tmp_path / "exportPivot_AMG159A.csv"
+    path.write_text(
+        "Grupe de varsta, Sexe, Perioade, UM: Procente, Valoare\n"
+        "Total, Total, Anul 2023, Procente, 5.6\n"
+        "Total, Total, Trimestrul I 2023, Procente, 5.8\n"
+        "Total, Total, Trimestrul II 2023, Procente, 5.4\n",
+        encoding="utf-8",
+    )
+    facts = to_facts(export_to_document(path, "s", "t"), "AMG159A")
+    assert [(f.an, f.valoare) for f in facts] == [("2023", 5.6)]
+    assert facts[0].um == "%"
+
+
+def test_county_names_get_their_diacritics_back(tmp_path):
+    """TEMPO writes "Timis"; claims write "Timiș"."""
+    from rofact.ingest.ins_tempo import export_to_document, to_facts
+    path = tmp_path / "exportPivot_SOM103A.csv"
+    path.write_text(
+        "Sexe, Macroregiuni  regiuni de dezvoltare si judete, Ani, UM: Procente, Valoare\n"
+        "Total, Timis, Anul 2024, Procente, 1\n"
+        "Total, Mun. Bucuresti -incl. SAI, Anul 1995, Procente, 4.1\n",
+        encoding="utf-8",
+    )
+    names = {f.teritoriu for f in to_facts(export_to_document(path, "s", "t"), "SOM103A")}
+    assert "Timiș" in names
+    # Pre-1997 Bucharest included what is now Ilfov: not the same territory.
+    assert "București (inclusiv Sectorul Agricol Ilfov)" in names
+
+
+def test_build_knows_which_source_a_stored_document_came_from():
+    """The build keeps the documents of every source not refreshed in a run. It
+    once rewrote the corpus from scratch, so an HTTP 500 from the Ministry of
+    Justice wiped the whole legislative corpus (1,793 -> 1,025 passages)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from build_corpus import source_of
+
+    def doc(domain):
+        return Document(document_id="d", source_url="https://x", title="t",
+                        source_type="law", source_tier=SourceTier.G2, domain=domain,
+                        published_at=None, retrieved_at=date(2026, 10, 26),
+                        snapshot_id="s", content_hash="a" * 64, license="l", text="x")
+
+    assert source_of(doc("ec.europa.eu")) == "eurostat"
+    assert source_of(doc("insse.ro")) == "ins_tempo"
+    assert source_of(doc("legislatie.just.ro")) == "legislatie"

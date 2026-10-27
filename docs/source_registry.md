@@ -92,7 +92,24 @@ folosind `size` și ordinea din `id`. Vezi `ingest/eurostat.py`.
 
 ## INS TEMPO Online
 
-**Acces:** API JSON nedocumentat public, pe portul 8077, HTTP (nu HTTPS).
+> **Actualizare 2026-08-04 — accesul s-a schimbat.** INS a răspuns în scris că datele
+> din TEMPO se descarcă **doar manual**. API-ul de pe portul 8077 descris mai jos
+> **nu se folosește**; `ingest/ins_tempo.py` parsează exporturile CSV salvate manual
+> în `data/raw/ins_tempo/`. Secțiunea de mai jos rămâne ca documentare istorică.
+>
+> **Licență, confirmată pe două căi:**
+> 1. emailul INS (2026-08-04): reutilizare fără acord prealabil, inclusiv a
+>    definițiilor și precizărilor metodologice, cu mențiunea sursei;
+> 2. subsolul public al site-ului TEMPO (verificat 2026-10-26): reutilizarea se face
+>    *„conform licenței pentru o guvernare deschisă"*, iar utilizarea în studii e
+>    autorizată *„numai cu indicarea clară și precisă a sursei"*.
+>
+> **Format export (verificat pe date reale):** separator `", "`; anii ca „Anul 2024";
+> coloana de timp se numește „Ani" sau „Perioade" (a doua amestecă anii cu
+> trimestrele); **punctul e separator zecimal** („8.4"), fără separator de mii;
+> valoare lipsă = `:`; **fără diacritice**.
+
+**Acces (istoric):** API JSON nedocumentat public, pe portul 8077, HTTP (nu HTTPS).
 
 ```
 GET http://statistici.insse.ro:8077/tempo-ins/context/{code}     # arborele tematic

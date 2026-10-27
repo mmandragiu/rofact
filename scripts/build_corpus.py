@@ -35,6 +35,19 @@ NOT_AUTOMATED = {
 }
 
 
+# Which source a stored document came from. The domain is recorded on every
+# Document, so it survives a round trip through documents.jsonl.
+DOMAIN_TO_SOURCE = {
+    "ec.europa.eu": "eurostat",
+    "insse.ro": "ins_tempo",
+    "legislatie.just.ro": "legislatie",
+}
+
+
+def source_of(document: Document) -> str:
+    return DOMAIN_TO_SOURCE.get(document.domain or "", document.domain or "?")
+
+
 def run_ingest(source: str, snapshot_id: str) -> tuple[list[Document], list[SnapshotEntry]]:
     """Dispatch to the right ingest module."""
     if source == "eurostat":
@@ -98,6 +111,7 @@ def main() -> int:
         documents: list[Document] = []
         entries: list[SnapshotEntry] = []
         failed: list[str] = []
+        refreshed: set[str] = set()
         for source in sources:
             try:
                 docs, source_entries = run_ingest(source, snapshot_id)
@@ -114,10 +128,25 @@ def main() -> int:
                   f"{sum(e.n_records or 0 for e in source_entries)} înregistrări")
             documents += docs
             entries += source_entries
+            refreshed.add(source)
 
         if not documents:
             print("\nNiciun document descărcat. Nu suprascriu documents.jsonl.")
             return 1
+
+        # Keep what was there for every source NOT refreshed in this run — failed or
+        # simply not asked for. A build used to rewrite the corpus from scratch, so
+        # when the Ministry of Justice's service returned HTTP 500 the whole
+        # legislative corpus vanished (1,793 -> 1,025 passages). Kept documents
+        # carry their own snapshot_id, so they still point at the manifest they
+        # were fetched under.
+        kept = [d for d in io.read_jsonl(io.DOCUMENTS_PATH, Document)
+                if source_of(d) not in refreshed]
+        if kept:
+            by_source = Counter(source_of(d) for d in kept)
+            print("  ↺ păstrate din build-ul anterior: "
+                  + ", ".join(f"{s} ({n} documente)" for s, n in sorted(by_source.items())))
+        documents = kept + documents
 
         io.write_jsonl(io.DOCUMENTS_PATH, documents)
         manifest = base.write_manifest(snapshot_id, entries)

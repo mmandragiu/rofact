@@ -216,16 +216,35 @@ TEMPLATES = [
     "{teritoriu}, {an} — {indicator}{defalcare}: {valoare}.",
 ]
 
-COMPARATIVE = "{Indicator}{defalcare}, comparativ în UE, {an}: {clasament}.{medie}"
+COMPARATIVE = "{Indicator}{defalcare}, {comparatie}, {an}: {clasament}.{medie}"
+
+
+class Scope(NamedTuple):
+    """What a ranking compares, and what its aggregate is called.
+
+    Each source ranks different territories: Eurostat compares EU member states,
+    INS compares Romanian counties. The scope was once hard-coded as "comparativ
+    în UE" — and a ranking of Teleorman, Vaslui and Dolj came out labelled as an
+    EU comparison, with Romania itself ranked among its own counties.
+    """
+
+    comparatie: str        # "comparativ în UE" / "pe județe"
+    aggregate_geo: str     # the territory reported apart, never ranked
+    aggregate_label: str   # "Media UE-27" / "La nivel național"
+
+
+EU_SCOPE = Scope("comparativ în UE", "EU27_2020", "Media UE-27")
+COUNTY_SCOPE = Scope("pe județe", "RO", "La nivel național")
 
 # Selection policy. Verbalising all 4,504 Eurostat observations three ways would
 # give ~13,500 passages — more than the WHOLE corpus target, leaving no room for
 # the media noise the research question is about. So: full treatment for the
 # country the claims are about, one ranked passage for the rest.
 FOCUS_GEO = "RO"
-# The EU aggregate is not a country: it is reported apart from the ranking, so a
-# claim about "the highest in the EU" is not accidentally settled against an average.
-AGGREGATE_GEO = "EU27_2020"
+# An aggregate (the EU average, Romania's national figure) is not one of the units
+# being ranked: it is reported apart, so a claim about "the highest in the EU" or
+# "the county with the most unemployment" is never settled against an average.
+# Which aggregate applies depends on the source — see Scope.
 
 
 def _capitalize(text: str) -> str:
@@ -240,7 +259,7 @@ def _value_with_unit(valoare: float, um: str) -> str:
 
 def verbalize_facts(doc: Document, facts: list[Fact], *,
                     focus_geo: str = FOCUS_GEO,
-                    aggregate_geo: str = AGGREGATE_GEO,
+                    scope: Scope = EU_SCOPE,
                     comparative: bool = True) -> Iterator[Passage]:
     """Turn facts into searchable Romanian sentences.
 
@@ -290,18 +309,20 @@ def verbalize_facts(doc: Document, facts: list[Fact], *,
     for group, members in groups.items():
         if len(members) < 2:
             continue
-        tari = sorted((f for f in members if f.geo_code != aggregate_geo),
+        tari = sorted((f for f in members if f.geo_code != scope.aggregate_geo),
                       key=lambda f: f.valoare, reverse=True)
-        agregat = next((f for f in members if f.geo_code == aggregate_geo), None)
+        agregat = next((f for f in members if f.geo_code == scope.aggregate_geo), None)
         if not tari:
             continue
         head = tari[0]
         clasament = ", ".join(
             f"{f.teritoriu} {_value_with_unit(f.valoare, f.um)}" for f in tari)
-        medie = (f" Media UE-27: {_value_with_unit(agregat.valoare, agregat.um)}."
+        medie = (f" {scope.aggregate_label}: "
+                 f"{_value_with_unit(agregat.valoare, agregat.um)}."
                  if agregat else "")
         text = COMPARATIVE.format(
             Indicator=_capitalize(head.indicator),
+            comparatie=scope.comparatie,
             medie=medie,
             defalcare=f", {head.defalcare}" if head.defalcare else "",
             an=head.an,
@@ -315,7 +336,7 @@ def verbalize_facts(doc: Document, facts: list[Fact], *,
             text=text,
             char_start=min(f.char_start for f in members),
             char_end=max(f.char_end for f in members),
-            section=f"{head.indicator}, {head.an} — comparativ UE",
+            section=f"{head.indicator}, {head.an} — {scope.comparatie}",
             is_verbalized=True,
             template_id="cmp",
         )
@@ -409,11 +430,13 @@ def build_passages(documents: list[Document], *,
             if doc.domain == "insse.ro":
                 from rofact.ingest.ins_tempo import to_facts as ins_facts
                 facts = ins_facts(doc, _matrix_of(doc))
+                scope = COUNTY_SCOPE
             else:
                 dataset = doc.source_url.removeprefix(
                     DATA_BROWSER.split("{")[0]).split("/")[0]
                 facts = to_facts(doc, dataset)
-            passages += verbalize_facts(doc, facts)
+                scope = EU_SCOPE
+            passages += verbalize_facts(doc, facts, scope=scope)
         elif doc.source_type == "law":
             articles = segment_by_article(doc)
             if filter_legal:
